@@ -42,7 +42,7 @@ func unit(t string, p sointu.ParamMap) sointu.Unit { return sointu.Unit{Type: t,
 func (BuiltinProvider) Patch() sointu.Patch {
 	return sointu.Patch{
 		{Name: "sine", NumVoices: 8, Units: []sointu.Unit{env(36, 58), osc(sointu.Sine, 64, 128, 64), unit("mulp", sointu.ParamMap{"stereo": 0}), unit("pan", sointu.ParamMap{"stereo": 0, "panning": 64}), unit("out", sointu.ParamMap{"stereo": 1, "gain": 28})}},
-		{Name: "lead", NumVoices: 8, Units: []sointu.Unit{osc(sointu.Trisaw, 64, 72, 58), unit("filter", sointu.ParamMap{"stereo": 0, "frequency": 82, "resonance": 96, "lowpass": 1, "bandpass": 0, "highpass": 0}), env(30, 60), unit("mulp", sointu.ParamMap{"stereo": 0}), unit("pan", sointu.ParamMap{"stereo": 0, "panning": 64}), unit("out", sointu.ParamMap{"stereo": 1, "gain": 22})}},
+		{Name: "lead", NumVoices: 8, Units: []sointu.Unit{osc(sointu.Trisaw, 64, 128, 64), unit("filter", sointu.ParamMap{"stereo": 0, "frequency": 108, "resonance": 110, "lowpass": 1, "bandpass": 0, "highpass": 0}), env(30, 60), unit("mulp", sointu.ParamMap{"stereo": 0}), unit("pan", sointu.ParamMap{"stereo": 0, "panning": 64}), unit("out", sointu.ParamMap{"stereo": 1, "gain": 22})}},
 		{Name: "bass", NumVoices: 8, Units: []sointu.Unit{osc(sointu.Trisaw, 52, 68, 60), unit("filter", sointu.ParamMap{"stereo": 0, "frequency": 65, "resonance": 104, "lowpass": 1, "bandpass": 0, "highpass": 0}), env(28, 62), unit("mulp", sointu.ParamMap{"stereo": 0}), unit("pan", sointu.ParamMap{"stereo": 0, "panning": 64}), unit("out", sointu.ParamMap{"stereo": 1, "gain": 24})}},
 	}
 }

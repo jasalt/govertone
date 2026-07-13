@@ -1,10 +1,14 @@
 package lisp_test
 
 import (
+	"io"
+	"math"
+	"testing"
+
+	"github.com/example/letgo-sointu/internal/analysis"
 	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/audio"
-	"io"
-	"testing"
+	"github.com/example/letgo-sointu/internal/clock"
 )
 
 func TestBindingsScheduleConcreteEvents(t *testing.T) {
@@ -36,6 +40,58 @@ func TestBindingsScheduleConcreteEvents(t *testing.T) {
 		}
 	}
 }
+func TestOctaveSequencePitchThroughLetGo(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	_, err = a.Lisp.EvalScript(`
+		(play :sine :a3 {:at 0 :dur 2})
+		(play :sine :a4 {:at 2 :dur 2})
+		(play :sine :a5 {:at 4 :dur 2})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf, err := audio.RenderOffline(a.Engine, 3*clock.SampleRate, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for segment, want := range []float64{220, 440, 880} {
+		samples := buf[segment*clock.SampleRate : (segment+1)*clock.SampleRate]
+		report, err := analysis.Analyze(&analysis.WAV{SampleRate: clock.SampleRate, Channels: 2, Format: 3, Bits: 32, Samples: samples})
+		if err != nil || math.Abs(report.DominantFrequencyHz-want) > 1 {
+			t.Fatalf("segment %d pitch=%g want=%g err=%v", segment, report.DominantFrequencyHz, want, err)
+		}
+	}
+}
+
+func TestLeadHarmonicProfile(t *testing.T) {
+	render := func(instrument string) analysis.Report {
+		a, err := app.New(io.Discard, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		if _, err = a.Lisp.Eval(`(play :` + instrument + ` :a4 {:at 0 :dur 4})`); err != nil {
+			t.Fatal(err)
+		}
+		buf, err := audio.RenderOffline(a.Engine, 2*clock.SampleRate, 512)
+		if err != nil {
+			t.Fatal(err)
+		}
+		report, err := analysis.Analyze(&analysis.WAV{SampleRate: clock.SampleRate, Channels: 2, Format: 3, Bits: 32, Samples: buf})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return report
+	}
+	sine, lead := render("sine"), render("lead")
+	if math.Abs(lead.DominantFrequencyHz-440) > 2 || lead.SpectralCentroidHz <= sine.SpectralCentroidHz*1.5 || lead.HarmonicsAbove40DB < 3 {
+		t.Fatalf("unexpected profile: sine centroid=%g lead=%#v", sine.SpectralCentroidHz, lead)
+	}
+}
+
 func TestStopAllCancelsFutureNotes(t *testing.T) {
 	a, err := app.New(io.Discard, io.Discard)
 	if err != nil {
