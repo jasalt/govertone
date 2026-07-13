@@ -148,8 +148,8 @@ func BenchmarkCompileAggregate(b *testing.B) {
 
 func TestEverySchemaHasUpstreamUnit(t *testing.T) {
 	r := NewSchemaRegistry()
-	if len(r.Types()) < 20 {
-		t.Fatalf("only %d unit schemas", len(r.Types()))
+	if len(r.Types()) != 32 {
+		t.Fatalf("got %d unit schemas, want all 32 pinned Sointu units", len(r.Types()))
 	}
 	for _, kind := range r.Types() {
 		if _, ok := r.Schema(kind); !ok {
