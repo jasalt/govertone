@@ -28,8 +28,10 @@ const (
 func versionText() string {
 	return fmt.Sprintf("music-runtime %s\ngo: %s\nlet-go: %s\nsointu: %s", version, runtime.Version(), letGoCommit, sointuCommit)
 }
-func usage() { fmt.Fprintln(os.Stderr, "usage: lgs <repl|render|analyze|doctor|version> [options]") }
-func main()  { code := run(os.Args[1:]); os.Exit(code) }
+func usage() {
+	fmt.Fprintln(os.Stderr, "usage: lgs <repl|render|analyze|patch|doctor|version> [options]")
+}
+func main() { code := run(os.Args[1:]); os.Exit(code) }
 func run(args []string) int {
 	if len(args) == 0 {
 		usage()
@@ -45,6 +47,8 @@ func run(args []string) int {
 		return analyzeCommand(args[1:])
 	case "doctor":
 		return doctorCommand(args[1:])
+	case "patch":
+		return patchCommand(args[1:])
 	case "repl":
 		return replCommand(args[1:])
 	default:
@@ -76,6 +80,7 @@ func renderCommand(args []string) int {
 	block := fs.Int("block-size", 512, "render block size")
 	report := fs.String("report", "", "analysis JSON output")
 	trace := fs.String("event-trace", "", "event trace JSON output")
+	patchTrace := fs.String("patch-trace", "", "patch update trace JSON output")
 	_, level, _ := common(fs)
 	if fs.Parse(args) != nil {
 		return 2
@@ -123,6 +128,12 @@ func renderCommand(args []string) int {
 	}
 	if *trace != "" {
 		if err = writeJSON(*trace, a.Engine.Trace(*block)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 5
+		}
+	}
+	if *patchTrace != "" {
+		if err = writeJSON(*patchTrace, a.Engine.PatchTrace()); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 5
 		}
@@ -187,6 +198,66 @@ func analyzeCommand(args []string) int {
 	}
 	return 0
 }
+func patchCommand(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: lgs patch <compile|validate|inspect> --input FILE")
+		return 2
+	}
+	action := args[0]
+	if action != "compile" && action != "validate" && action != "inspect" {
+		fmt.Fprintf(os.Stderr, "unknown patch action %q\n", action)
+		return 2
+	}
+	fs := flag.NewFlagSet("patch "+action, flag.ContinueOnError)
+	input := fs.String("input", "", "let-go synth definition file")
+	report := fs.String("report", "", "JSON report output")
+	format := fs.String("format", "json", "inspection format (json only)")
+	_, level, _ := common(fs)
+	if fs.Parse(args[1:]) != nil {
+		return 2
+	}
+	if *input == "" || *format != "json" {
+		fmt.Fprintln(os.Stderr, "patch command requires --input and --format json")
+		return 2
+	}
+	if err := validateCommon(*level); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	source, err := os.ReadFile(*input)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 3
+	}
+	a, err := app.New(io.Discard, os.Stderr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 5
+	}
+	defer a.Close()
+	if _, err = a.Lisp.EvalScript(string(source)); err != nil {
+		failure := map[string]any{"valid": false, "errors": []map[string]any{{"code": "patch-compile-failed", "message": err.Error()}}}
+		if *report != "" {
+			_ = writeJSON(*report, failure)
+		}
+		encoded, _ := json.MarshalIndent(failure, "", "  ")
+		fmt.Fprintln(os.Stderr, string(encoded))
+		return 6
+	}
+	snapshot := a.PatchRegistry.Snapshot()
+	result := map[string]any{"valid": true, "action": action, "generation": snapshot.Generation, "fingerprint": snapshot.Fingerprint, "layout": snapshot.Layout, "synths": snapshot.Definitions, "patch_trace": a.Engine.PatchTrace()}
+	if *report != "" {
+		if err = writeJSON(*report, result); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 6
+		}
+	} else {
+		encoded, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(encoded))
+	}
+	return 0
+}
+
 func replCommand(args []string) int {
 	fs := flag.NewFlagSet("repl", flag.ContinueOnError)
 	noAudio, level, _ := common(fs)

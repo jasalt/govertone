@@ -30,15 +30,17 @@ func (k EventKind) String() string {
 }
 
 type Event struct {
-	ID         uint64
-	Frame      clock.FrameIndex
-	Sequence   uint64
-	Kind       EventKind
-	Instrument instruments.InstrumentID
-	Voice      instruments.VoiceID
-	Note       uint8
-	Tempo      float64
-	HandleID   uint64
+	ID          uint64
+	Frame       clock.FrameIndex
+	Sequence    uint64
+	Kind        EventKind
+	Instrument  instruments.InstrumentID
+	Voice       instruments.VoiceID // generation-specific voice at scheduling time (diagnostics)
+	VoiceOffset int                 // stable offset within the symbolic instrument
+	Generation  uint64
+	Note        uint8
+	Tempo       float64
+	HandleID    uint64
 }
 
 type TraceEvent struct {

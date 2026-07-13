@@ -1,0 +1,12 @@
+(defsynth live-lead {:voices 4}
+  (envelope {:attack 4 :decay 32 :sustain 100 :release 40})
+  (oscillator {:type :sine}) (mulp) (out {:gain 78}))
+
+(play live-lead :a4 {:dur 2})
+
+;; Reevaluate after the first note, then play again.
+(defsynth live-lead {:voices 4}
+  (envelope {:attack 4 :decay 32 :sustain 100 :release 40})
+  (oscillator {:type :saw}) (mulp)
+  (filter {:type :lowpass :frequency 108 :resonance 110})
+  (out {:gain 70}))

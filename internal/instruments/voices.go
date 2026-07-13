@@ -13,6 +13,8 @@ type NoteHandle struct {
 	Note       uint8
 	StartFrame uint64
 	EndFrame   uint64
+	Generation uint64
+	Epoch      uint64
 }
 
 type reservation struct {
@@ -21,16 +23,18 @@ type reservation struct {
 }
 
 type Allocator struct {
-	mu        sync.Mutex
-	defs      map[InstrumentID]Definition
-	voices    map[VoiceID]reservation
-	handles   map[uint64]VoiceID
-	next      uint64
-	highWater int
+	mu         sync.Mutex
+	defs       map[InstrumentID]Definition
+	voices     map[VoiceID]reservation
+	handles    map[uint64]VoiceID
+	next       uint64
+	generation uint64
+	epochs     map[VoiceID]uint64
+	highWater  int
 }
 
 func NewAllocator(defs map[InstrumentID]Definition) *Allocator {
-	return &Allocator{defs: defs, voices: map[VoiceID]reservation{}, handles: map[uint64]VoiceID{}}
+	return &Allocator{defs: defs, voices: map[VoiceID]reservation{}, handles: map[uint64]VoiceID{}, generation: 1, epochs: map[VoiceID]uint64{}}
 }
 
 // Allocate deterministically selects the lowest voice free at start, otherwise
@@ -68,7 +72,8 @@ func (a *Allocator) Allocate(id InstrumentID, note uint8, start, end uint64) (No
 		stolen = &cp
 	}
 	a.next++
-	h := NoteHandle{EventID: a.next, Instrument: id, Voice: chosen, Note: note, StartFrame: start, EndFrame: end}
+	a.epochs[chosen]++
+	h := NoteHandle{EventID: a.next, Instrument: id, Voice: chosen, Note: note, StartFrame: start, EndFrame: end, Generation: a.generation, Epoch: a.epochs[chosen]}
 	a.voices[chosen] = reservation{h, true}
 	a.handles[h.EventID] = chosen
 	active := 0
@@ -126,4 +131,28 @@ func (a *Allocator) StopAll(at uint64) []NoteHandle {
 	}
 	return out
 }
+
+// Reset atomically publishes a generation-specific voice layout and
+// invalidates every old handle. The allocator object remains stable for users.
+func (a *Allocator) Reset(defs map[InstrumentID]Definition, generation uint64) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	invalidated := len(a.handles)
+	a.defs = make(map[InstrumentID]Definition, len(defs))
+	for id, def := range defs {
+		a.defs[id] = def
+	}
+	a.voices = map[VoiceID]reservation{}
+	a.handles = map[uint64]VoiceID{}
+	a.epochs = map[VoiceID]uint64{}
+	a.generation = generation
+	return invalidated
+}
+
+func (a *Allocator) Generation() uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.generation
+}
+
 func (a *Allocator) HighWater() int { a.mu.Lock(); defer a.mu.Unlock(); return a.highWater }

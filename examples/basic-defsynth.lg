@@ -1,0 +1,10 @@
+(in-ns 'music.core)
+
+(defsynth bell
+  {:voices 4 :doc "A minimal interactive synth"}
+  (envelope {:attack 4 :decay 40 :sustain 80 :release 55})
+  (oscillator {:type :sine})
+  (mulp)
+  (out {:gain 78}))
+
+(play bell :c5 {:dur 2})

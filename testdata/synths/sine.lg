@@ -1,0 +1,6 @@
+(defsynth test-sine
+  {:voices 4 :doc "Phase 2 dynamic sine"}
+  (envelope {:attack 4 :decay 16 :sustain 100 :release 24})
+  (oscillator {:type :sine})
+  (mulp)
+  (out {:gain 80}))

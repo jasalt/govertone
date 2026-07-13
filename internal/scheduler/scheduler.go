@@ -84,6 +84,17 @@ func (s *Scheduler) CancelHandle(handleID uint64, at uint64) int {
 	return removed
 }
 
+// CancelMusical removes every pending note/global event during an incompatible
+// patch generation change. It returns the number of invalidated commands.
+func (s *Scheduler) CancelMusical() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	removed := len(s.h)
+	s.h = s.h[:0]
+	heap.Init(&s.h)
+	return removed
+}
+
 func (s *Scheduler) Len() int { s.mu.Lock(); defer s.mu.Unlock(); return len(s.h) }
 func (s *Scheduler) Stats() (maxDepth int, overflows uint64) {
 	s.mu.Lock()

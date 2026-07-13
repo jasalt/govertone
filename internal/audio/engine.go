@@ -24,16 +24,23 @@ type Stats struct {
 }
 
 type Engine struct {
-	synth     sointu.Synth
-	scheduler *scheduler.Scheduler
-	frame     atomic.Uint64
-	owners    [32]uint64
-	traceMu   sync.Mutex
-	closeOnce sync.Once
-	trace     []scheduler.TraceEvent
-	late      atomic.Uint64
-	dropped   atomic.Uint64
-	maxRender atomic.Int64
+	synth            sointu.Synth
+	scheduler        *scheduler.Scheduler
+	frame            atomic.Uint64
+	owners           [32]uint64
+	layout           map[instruments.InstrumentID]instruments.Definition
+	renderMu         sync.Mutex
+	patchGeneration  atomic.Uint64
+	patchFingerprint atomic.Value
+	patchRequest     atomic.Uint64
+	patchTraceMu     sync.Mutex
+	patchTrace       []PatchUpdateTrace
+	traceMu          sync.Mutex
+	closeOnce        sync.Once
+	trace            []scheduler.TraceEvent
+	late             atomic.Uint64
+	dropped          atomic.Uint64
+	maxRender        atomic.Int64
 }
 
 func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm float64) (*Engine, error) {
@@ -41,10 +48,18 @@ func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm f
 	if err != nil {
 		return nil, fmt.Errorf("initialize Sointu: %w", err)
 	}
-	return &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536)}, nil
+	e := &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}}
+	for _, definition := range provider.Instruments() {
+		e.layout[definition.ID] = definition
+	}
+	e.patchGeneration.Store(1)
+	e.patchFingerprint.Store(provider.Fingerprint())
+	return e, nil
 }
 func (e *Engine) Close() {
 	e.closeOnce.Do(func() {
+		e.renderMu.Lock()
+		defer e.renderMu.Unlock()
 		if e.synth != nil {
 			e.synth.Close()
 		}
@@ -69,6 +84,8 @@ func (e *Engine) render(dst sointu.AudioBuffer) error {
 // RenderBlock splits at every event boundary; the output is therefore
 // independent of callback/block size.
 func (e *Engine) RenderBlock(dst sointu.AudioBuffer) error {
+	e.renderMu.Lock()
+	defer e.renderMu.Unlock()
 	started := time.Now()
 	defer func() {
 		d := time.Since(started).Nanoseconds()
@@ -120,16 +137,26 @@ func (e *Engine) RenderBlock(dst sointu.AudioBuffer) error {
 	return nil
 }
 func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
+	voice := int(ev.Voice)
+	if ev.Kind == scheduler.EventTrigger || ev.Kind == scheduler.EventRelease {
+		definition, exists := e.layout[ev.Instrument]
+		if !exists || ev.VoiceOffset < 0 || ev.VoiceOffset >= definition.Voices {
+			e.dropped.Add(1)
+			e.recordEvent(ev, at, voice, ev.Kind.String()+"-failed")
+			return
+		}
+		voice = int(definition.FirstVoice) + ev.VoiceOffset
+	}
 	switch ev.Kind {
 	case scheduler.EventTrigger:
 		// Sointu's tracker note convention is one octave above MIDI (its 81
 		// is concert A4). Keep the public API in MIDI and translate here.
-		e.synth.Trigger(int(ev.Voice), ev.Note+12)
-		e.owners[int(ev.Voice)] = ev.HandleID
+		e.synth.Trigger(voice, ev.Note+12)
+		e.owners[voice] = ev.HandleID
 	case scheduler.EventRelease:
-		if e.owners[int(ev.Voice)] == ev.HandleID {
-			e.synth.Release(int(ev.Voice))
-			e.owners[int(ev.Voice)] = 0
+		if e.owners[voice] == ev.HandleID {
+			e.synth.Release(voice)
+			e.owners[voice] = 0
 		}
 	case scheduler.EventStopAll:
 		for i, id := range e.owners {
@@ -139,9 +166,13 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 			}
 		}
 	}
+	e.recordEvent(ev, at, voice, ev.Kind.String())
+}
+
+func (e *Engine) recordEvent(ev scheduler.Event, at clock.FrameIndex, voice int, kind string) {
 	e.traceMu.Lock()
 	if len(e.trace) < cap(e.trace) {
-		e.trace = append(e.trace, scheduler.TraceEvent{ID: ev.ID, Kind: ev.Kind.String(), Instrument: string(ev.Instrument), Voice: int(ev.Voice), Note: ev.Note, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)})
+		e.trace = append(e.trace, scheduler.TraceEvent{ID: ev.ID, Kind: kind, Instrument: string(ev.Instrument), Voice: voice, Note: ev.Note, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)})
 	} else {
 		e.dropped.Add(1)
 	}

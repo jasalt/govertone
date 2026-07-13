@@ -1,0 +1,8 @@
+(defsynth dynamic-sine
+  {:voices 4}
+  (envelope {:attack 4 :decay 16 :sustain 100 :release 24})
+  (oscillator {:type :sine})
+  (mulp)
+  (out {:gain 80}))
+
+(play dynamic-sine :a4 {:at 0 :dur 4})

@@ -1,0 +1,7 @@
+(defsynth filtered-saw
+  {:voices 4}
+  (envelope {:attack 4 :decay 32 :sustain 100 :release 40})
+  (oscillator {:type :saw})
+  (mulp)
+  (filter {:type :lowpass :frequency 108 :resonance 110})
+  (out {:gain 70}))

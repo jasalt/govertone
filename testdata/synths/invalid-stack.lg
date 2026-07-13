@@ -1,0 +1,3 @@
+(defsynth bad-stack {:voices 1}
+  (mulp)
+  (out {:gain 80}))

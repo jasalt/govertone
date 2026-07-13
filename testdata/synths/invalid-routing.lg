@@ -1,0 +1,4 @@
+(defsynth bad-route {:voices 1}
+  (oscillator {:type :sine} {:id :source})
+  (send {:target (ref :missing :transpose) :amount 64})
+  (out {:gain 80}))

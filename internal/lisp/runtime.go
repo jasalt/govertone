@@ -12,6 +12,7 @@ import (
 	"github.com/example/letgo-sointu/internal/audio"
 	"github.com/example/letgo-sointu/internal/clock"
 	"github.com/example/letgo-sointu/internal/instruments"
+	patchmodel "github.com/example/letgo-sointu/internal/patch"
 	"github.com/example/letgo-sointu/internal/scheduler"
 	"github.com/nooga/let-go/pkg/api"
 	"github.com/nooga/let-go/pkg/rt"
@@ -19,24 +20,25 @@ import (
 )
 
 type Runtime struct {
-	lg        *api.LetGo
-	engine    *audio.Engine
-	transport *clock.Transport
-	queue     *scheduler.Scheduler
-	allocator *instruments.Allocator
-	provider  instruments.PatchProvider
-	evalMu    sync.Mutex
-	atBeat    *clock.Beat
+	lg            *api.LetGo
+	engine        *audio.Engine
+	transport     *clock.Transport
+	queue         *scheduler.Scheduler
+	allocator     *instruments.Allocator
+	provider      instruments.PatchProvider
+	patchRegistry *patchmodel.Registry
+	evalMu        sync.Mutex
+	atBeat        *clock.Beat
 }
 
-func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *instruments.Allocator, p instruments.PatchProvider, out, errOut io.Writer) (*Runtime, error) {
+func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *instruments.Allocator, p instruments.PatchProvider, registry *patchmodel.Registry, out, errOut io.Writer) (*Runtime, error) {
 	lg, err := api.NewLetGo("music.core", api.WithStdout(out), api.WithStderr(errOut))
 	if err != nil {
 		return nil, err
 	}
 	// music.core defines transport `now`, intentionally shadowing core/now.
 	rt.NS("music.core").Exclude("now")
-	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p}
+	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry}
 	defs := map[string]func([]vm.Value) (vm.Value, error){"play": r.play, "release": r.release, "at": r.at, "tempo": r.tempo, "now": r.now, "stop-all": r.stopAll, "instruments": r.instrumentsFn, "note-number": r.noteNumber}
 	for name, f := range defs {
 		v, e := vm.NativeFnType.Wrap(f)
@@ -46,6 +48,9 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 		if e = lg.Def(name, v); e != nil {
 			return nil, e
 		}
+	}
+	if err := r.installPatchBindings(); err != nil {
+		return nil, fmt.Errorf("install patch DSL: %w", err)
 	}
 	return r, nil
 }
@@ -131,8 +136,15 @@ func (r *Runtime) instrumentValue(v vm.Value) (instruments.InstrumentID, error) 
 		s = string(x)
 	case vm.String:
 		s = string(x)
+	case *vm.PersistentMap:
+		id := x.ValueAt(vm.Keyword("id"))
+		keyword, ok := id.(vm.Keyword)
+		if !ok {
+			return "", fmt.Errorf("synth handle requires keyword :id")
+		}
+		s = string(keyword)
 	default:
-		return "", fmt.Errorf("instrument must be a keyword, got %s", v.Type().Name())
+		return "", fmt.Errorf("instrument must be a keyword or synth handle, got %s", v.Type().Name())
 	}
 	id := instruments.InstrumentID(strings.TrimPrefix(s, ":"))
 	if _, ok := instruments.Registry(r.provider)[id]; !ok {
@@ -151,7 +163,7 @@ func mapOf(kv ...vm.Value) *vm.PersistentMap {
 	return m
 }
 func handleMap(h instruments.NoteHandle, start clock.Beat) *vm.PersistentMap {
-	return mapOf(vm.Keyword("id"), vm.Int(h.EventID), vm.Keyword("instrument"), vm.Keyword(h.Instrument), vm.Keyword("voice"), vm.Int(h.Voice), vm.Keyword("note"), vm.Int(h.Note), vm.Keyword("start-beat"), beatVM(start), vm.Keyword("start-frame"), vm.Int(h.StartFrame))
+	return mapOf(vm.Keyword("id"), vm.Int(h.EventID), vm.Keyword("instrument"), vm.Keyword(h.Instrument), vm.Keyword("voice"), vm.Int(h.Voice), vm.Keyword("note"), vm.Int(h.Note), vm.Keyword("start-beat"), beatVM(start), vm.Keyword("start-frame"), vm.Int(h.StartFrame), vm.Keyword("generation"), vm.Int(h.Generation), vm.Keyword("epoch"), vm.Int(h.Epoch))
 }
 func beatVM(b clock.Beat) vm.Value {
 	if b.Denominator == 1 {
@@ -230,20 +242,31 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 		if uint64(startFrame) < math.MaxUint64 {
 			r.queue.CancelHandle(stolen.EventID, uint64(startFrame)+1)
 		}
-		if _, err = r.queue.Add(scheduler.Event{Frame: startFrame, Kind: scheduler.EventRelease, Instrument: stolen.Instrument, Voice: stolen.Voice, Note: stolen.Note, HandleID: stolen.EventID}); err != nil {
+		if _, err = r.queue.Add(r.noteEvent(startFrame, scheduler.EventRelease, *stolen)); err != nil {
 			return vm.NIL, err
 		}
 	}
-	if _, err = r.queue.Add(scheduler.Event{Frame: startFrame, Kind: scheduler.EventTrigger, Instrument: id, Voice: h.Voice, Note: note, HandleID: h.EventID}); err != nil {
+	if _, err = r.queue.Add(r.noteEvent(startFrame, scheduler.EventTrigger, h)); err != nil {
 		return vm.NIL, err
 	}
 	if dur != nil {
-		if _, err = r.queue.Add(scheduler.Event{Frame: endFrame, Kind: scheduler.EventRelease, Instrument: id, Voice: h.Voice, Note: note, HandleID: h.EventID}); err != nil {
+		if _, err = r.queue.Add(r.noteEvent(endFrame, scheduler.EventRelease, h)); err != nil {
 			return vm.NIL, err
 		}
 	}
 	return handleMap(h, start), nil
 }
+func (r *Runtime) noteEvent(frame clock.FrameIndex, kind scheduler.EventKind, h instruments.NoteHandle) scheduler.Event {
+	offset := int(h.Voice)
+	for _, definition := range r.provider.Instruments() {
+		if definition.ID == h.Instrument {
+			offset = int(h.Voice - definition.FirstVoice)
+			break
+		}
+	}
+	return scheduler.Event{Frame: frame, Kind: kind, Instrument: h.Instrument, Voice: h.Voice, VoiceOffset: offset, Generation: h.Generation, Note: h.Note, HandleID: h.EventID}
+}
+
 func handleID(v vm.Value) (uint64, error) {
 	switch x := v.(type) {
 	case vm.Int:
@@ -280,7 +303,7 @@ func (r *Runtime) release(args []vm.Value) (vm.Value, error) {
 	if h.StartFrame > at {
 		return vm.TRUE, nil
 	}
-	_, err = r.queue.Add(scheduler.Event{Frame: clock.FrameIndex(at), Kind: scheduler.EventRelease, Instrument: h.Instrument, Voice: h.Voice, Note: h.Note, HandleID: id})
+	_, err = r.queue.Add(r.noteEvent(clock.FrameIndex(at), scheduler.EventRelease, h))
 	if err != nil {
 		return vm.NIL, err
 	}
@@ -344,7 +367,7 @@ func (r *Runtime) stopAll(args []vm.Value) (vm.Value, error) {
 		if h.StartFrame > at {
 			continue
 		}
-		if _, err := r.queue.Add(scheduler.Event{Frame: clock.FrameIndex(at), Kind: scheduler.EventRelease, Instrument: h.Instrument, Voice: h.Voice, Note: h.Note, HandleID: h.EventID}); err != nil {
+		if _, err := r.queue.Add(r.noteEvent(clock.FrameIndex(at), scheduler.EventRelease, h)); err != nil {
 			return vm.NIL, err
 		}
 	}
