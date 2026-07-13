@@ -2,6 +2,13 @@
 
 `lgs` is an interactive music environment embedding the [let-go](https://github.com/nooga/let-go) Lisp runtime and the pure-Go [Sointu](https://github.com/vsariola/sointu) VM. It provides exact beat scheduling, deterministic offline float WAV rendering, real-time stereo output through Oto/ALSA/PipeWire, automatic audio analysis, and a transactional `defsynth` patch DSL.
 
+## Background
+
+Experimental project generated with `gpt-5.6-sol` (high) for learning something about:
+
+- How audio engine works in https://github.com/vsariola/sointu
+- Could let-go be used for building a interactive music environment on top of Sointu reminiscient of Clojure Overtone built on top of Supercollider?
+
 ## Fedora 44 setup
 
 ```sh
