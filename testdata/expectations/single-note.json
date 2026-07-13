@@ -1,0 +1,12 @@
+{
+  "sample_rate": 44100,
+  "channels": 2,
+  "fundamental_hz": {"min": 439.0, "max": 441.0},
+  "peak": {"min": 0.005, "max": 0.9},
+  "rms_min": 0.0005,
+  "dc_abs_max": 0.005,
+  "clipped_samples_max": 0,
+  "stereo_rms_ratio": {"min": 0.99, "max": 1.01},
+  "stereo_correlation_min": 0.999,
+  "harmonic_purity_db": -25
+}

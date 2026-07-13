@@ -1,0 +1,15 @@
+(tempo 120)
+
+(play :bass :c2 {:at 0 :dur 4})
+(play :bass :c2 {:at 4 :dur 4})
+
+(play :lead :c4 {:at 0 :dur 1/2})
+(play :lead :e4 {:at 1/2 :dur 1/2})
+(play :lead :g4 {:at 1 :dur 1})
+(play :lead :e4 {:at 2 :dur 1/2})
+(play :lead :g4 {:at 5/2 :dur 1/2})
+(play :lead :c5 {:at 3 :dur 1})
+
+(play :sine :c5 {:at 6 :dur 1/2})
+(play :sine :e5 {:at 13/2 :dur 1/2})
+(play :sine :g5 {:at 7 :dur 1})

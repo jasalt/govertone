@@ -1,0 +1,278 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"runtime"
+	"time"
+
+	"github.com/example/letgo-sointu/internal/analysis"
+	"github.com/example/letgo-sointu/internal/app"
+	"github.com/example/letgo-sointu/internal/audio"
+	"github.com/example/letgo-sointu/internal/clock"
+)
+
+const (
+	version      = "0.1.0"
+	letGoCommit  = "79b96e56ceca2961009f93d8255fde65275a2efc"
+	sointuCommit = "c4d0683be728f4e788528c96b4270ef24f77aff5"
+)
+
+func versionText() string {
+	return fmt.Sprintf("music-runtime %s\ngo: %s\nlet-go: %s\nsointu: %s", version, runtime.Version(), letGoCommit, sointuCommit)
+}
+func usage() { fmt.Fprintln(os.Stderr, "usage: lgs <repl|render|analyze|doctor|version> [options]") }
+func main()  { code := run(os.Args[1:]); os.Exit(code) }
+func run(args []string) int {
+	if len(args) == 0 {
+		usage()
+		return 2
+	}
+	switch args[0] {
+	case "version":
+		fmt.Println(versionText())
+		return 0
+	case "render":
+		return renderCommand(args[1:])
+	case "analyze":
+		return analyzeCommand(args[1:])
+	case "doctor":
+		return doctorCommand(args[1:])
+	case "repl":
+		return replCommand(args[1:])
+	default:
+		usage()
+		return 2
+	}
+}
+func common(fs *flag.FlagSet) (*bool, *string, *bool) {
+	noAudio := fs.Bool("no-audio", false, "do not open an audio device")
+	level := fs.String("log-level", "info", "error|warn|info|debug")
+	jsonLogs := fs.Bool("json-logs", false, "emit JSON logs")
+	return noAudio, level, jsonLogs
+}
+func validateCommon(level string) error {
+	switch level {
+	case "error", "warn", "info", "debug":
+		return nil
+	}
+	return fmt.Errorf("invalid --log-level %q", level)
+}
+func renderCommand(args []string) int {
+	fs := flag.NewFlagSet("render", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	input := fs.String("input", "", "let-go input program")
+	output := fs.String("output", "", "float WAV output")
+	duration := fs.Duration("duration", 0, "timeline duration")
+	tail := fs.Duration("tail", 2*time.Second, "release tail")
+	rate := fs.Int("sample-rate", clock.SampleRate, "sample rate (44100 only)")
+	block := fs.Int("block-size", 512, "render block size")
+	report := fs.String("report", "", "analysis JSON output")
+	trace := fs.String("event-trace", "", "event trace JSON output")
+	_, level, _ := common(fs)
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if err := validateCommon(*level); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if *input == "" || *output == "" || *duration <= 0 {
+		fmt.Fprintln(os.Stderr, "render requires --input, --output, and positive --duration")
+		return 2
+	}
+	if *rate != clock.SampleRate {
+		fmt.Fprintf(os.Stderr, "unsupported sample rate %d; Phase 1 requires 44100\n", *rate)
+		return 2
+	}
+	if *block <= 0 {
+		fmt.Fprintln(os.Stderr, "block size must be positive")
+		return 2
+	}
+	src, err := os.ReadFile(*input)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 3
+	}
+	a, err := app.New(io.Discard, os.Stderr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 5
+	}
+	defer a.Close()
+	if _, err = a.Lisp.EvalScript(string(src)); err != nil {
+		fmt.Fprintf(os.Stderr, "program evaluation: %v\n", err)
+		return 3
+	}
+	frames := int(((*duration) + (*tail)) * clock.SampleRate / time.Second)
+	buf, err := audio.RenderOffline(a.Engine, frames, *block)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 5
+	}
+	if err = audio.WriteWAV(*output, buf); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 5
+	}
+	if *trace != "" {
+		if err = writeJSON(*trace, a.Engine.Trace(*block)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 5
+		}
+	}
+	if *report != "" {
+		w := &analysis.WAV{SampleRate: clock.SampleRate, Channels: 2, Format: 3, Bits: 32, Samples: buf}
+		r, e := analysis.Analyze(w)
+		if e != nil {
+			fmt.Fprintln(os.Stderr, e)
+			return 6
+		}
+		if e = analysis.WriteReport(*report, r); e != nil {
+			fmt.Fprintln(os.Stderr, e)
+			return 6
+		}
+	}
+	stats := a.Engine.Stats(a.Allocator)
+	fmt.Fprintf(os.Stderr, "rendered %d frames; late=%d dropped=%d\n", stats.FramesRendered, stats.LateEvents, stats.DroppedEvents)
+	if stats.LateEvents != 0 || stats.DroppedEvents != 0 {
+		return 5
+	}
+	return 0
+}
+func analyzeCommand(args []string) int {
+	fs := flag.NewFlagSet("analyze", flag.ContinueOnError)
+	input := fs.String("input", "", "WAV input")
+	report := fs.String("report", "", "JSON report output")
+	_, level, _ := common(fs)
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if err := validateCommon(*level); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if *input == "" {
+		fmt.Fprintln(os.Stderr, "analyze requires --input")
+		return 2
+	}
+	w, err := analysis.ReadWAV(*input)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 6
+	}
+	r, err := analysis.Analyze(w)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 6
+	}
+	if *report != "" {
+		if err = analysis.WriteReport(*report, r); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 6
+		}
+	} else {
+		b, _ := json.MarshalIndent(r, "", "  ")
+		fmt.Println(string(b))
+	}
+	if !r.Finite {
+		return 6
+	}
+	return 0
+}
+func replCommand(args []string) int {
+	fs := flag.NewFlagSet("repl", flag.ContinueOnError)
+	noAudio, level, _ := common(fs)
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if err := validateCommon(*level); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	a, err := app.New(os.Stdout, os.Stderr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer a.Close()
+	fmt.Fprintf(os.Stderr, "lgs %s; Sointu patch %s\n", version, a.Provider.Fingerprint())
+	var rt *audio.Realtime
+	if !*noAudio {
+		rt, err = audio.StartRealtime(a.Engine)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 4
+		}
+		defer rt.Close()
+		fmt.Fprintln(os.Stderr, "real-time audio ready")
+	} else {
+		fmt.Fprintln(os.Stderr, "audio disabled")
+	}
+	if err = a.Lisp.REPL(os.Stdin, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	_, _ = a.Lisp.Eval("(stop-all)")
+	return 0
+}
+func doctorCommand(args []string) int {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	noAudio, level, _ := common(fs)
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	if err := validateCommon(*level); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	fmt.Println(versionText())
+	a, err := app.New(io.Discard, os.Stderr)
+	if err != nil {
+		fmt.Println("offline: FAIL:", err)
+		return 1
+	}
+	defer a.Close()
+	if _, err = a.Lisp.Eval(`(play :sine :a4 {:at 0 :dur 1})`); err != nil {
+		fmt.Println("let-go: FAIL:", err)
+		return 1
+	}
+	buf, err := audio.RenderOffline(a.Engine, clock.SampleRate, 256)
+	if err != nil {
+		fmt.Println("Sointu: FAIL:", err)
+		return 1
+	}
+	w := &analysis.WAV{SampleRate: clock.SampleRate, Channels: 2, Format: 3, Bits: 32, Samples: buf}
+	r, err := analysis.Analyze(w)
+	if err != nil || !r.Finite || r.Left.Peak < .005 {
+		fmt.Printf("offline analysis: FAIL: peak=%g err=%v\n", r.Left.Peak, err)
+		return 1
+	}
+	fmt.Printf("offline: ok (peak %.4f, pitch %.2f Hz)\n", r.Left.Peak, r.DominantFrequencyHz)
+	if *noAudio {
+		fmt.Println("real-time audio: skipped (--no-audio)")
+	} else if realtime, e := audio.StartRealtime(a.Engine); e != nil {
+		fmt.Println("real-time audio: unavailable (optional):", e)
+	} else {
+		fmt.Println("real-time audio: available")
+		_ = realtime.Close()
+	}
+	return 0
+}
+func writeJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' {
+			if err = os.MkdirAll(path[:i], 0755); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return os.WriteFile(path, append(b, '\n'), 0644)
+}

@@ -1,0 +1,5 @@
+/.cache/
+/.tools/
+/out/
+/lgs
+*.wav

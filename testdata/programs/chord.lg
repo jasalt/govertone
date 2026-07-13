@@ -1,0 +1,4 @@
+(tempo 120)
+(play :sine :c4 {:at 0 :dur 4})
+(play :sine :e4 {:at 0 :dur 4})
+(play :sine :g4 {:at 0 :dur 4})

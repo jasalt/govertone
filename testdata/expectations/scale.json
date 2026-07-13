@@ -1,0 +1,1 @@
+{"sample_rate":44100,"channels":2,"segment_frequencies_hz":[220,440,880],"frequency_tolerance_hz":1.0,"peak_min":0.005,"peak_max":0.9}

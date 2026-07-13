@@ -1,0 +1,2 @@
+(tempo 120)
+(play :sine :a4 {:at 0 :dur 4})
