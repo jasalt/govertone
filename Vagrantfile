@@ -1,9 +1,23 @@
- # -*- mode: ruby -*-
- # vi: set ft=ruby :
- #
- 
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+
+# Vagrantfile for launching graphical Fedora 44 VM environment useful as a
+# development sandbox. Mounts the repository (cwd) at /home/vagrant/govertone
+
+# Based on (outdated) Vagrantfile at https://fedoraproject.org/wiki/Vagrant
+
+# Usage on Mac or Windows requires setting up compatible VM provider.
+# See also VirtualBox image variant available at:
+# https://mirrors.nxthost.com/fedora/releases/44/Cloud/x86_64/images/
+
+# TODO
+# - include all development environment dependencies
+# - setup audio for testing
+# - figure out how to avoid SELinux warnings with the mounted directory
+
  VAGRANTFILE_API_VERSION = "2"
- 
+
  Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # If you'd prefer to pull your boxes from Hashicorp's repository, you can
   # replace the config.vm.box and config.vm.box_url declarations with the line below.
@@ -38,11 +52,11 @@
   config.vm.provision "shell", inline: "sudo dnf upgrade -y"
  
   # bootstrap and run with ansible
-  config.vm.provision "shell", inline: "sudo dnf -y install python3-dnf python3-libselinux npm find-fd ripgrep chromium-browser docker docker-compose-plugin tmux"
+  config.vm.provision "shell", inline: "sudo dnf -y install python3-dnf python3-libselinux npm ripgrep chromium-browser tmux"
   # config.vm.provision "ansible" do |ansible|
   #     ansible.playbook = "devel/ansible/vagrant-playbook.yml"
   # end
-  config.vm.provision "shell", inline: "sudo npm install -g agent-browser"
+  # config.vm.provision "shell", inline: "sudo npm install -g agent-browser"
   config.vm.provision "shell", inline: "npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
 
   host_uid = `id -u`.strip
@@ -82,14 +96,15 @@ EOF
 SHELL
 
   # Create the "nuancier" box
-  config.vm.define "nuancier" do |nuancier|
-     nuancier.vm.host_name = "nuancier-dev.example.com"
+  config.vm.define "govertone" do |govertone|
+    govertone.vm.host_name = "govertone-dev.example.com"
  
-     nuancier.vm.provider :libvirt do |domain, override|
+    govertone.vm.provider :libvirt do |domain, override|
        domain.cpus = 4
        domain.graphics_type = "spice"
-       domain.memory = 2048
+       domain.memory = 4096
        domain.video_type = "qxl"
+       # TODO audio
 
        # Required for virtiofs shared folders
        domain.qemu_use_session = false          # use qemu:///system
@@ -104,7 +119,7 @@ SHELL
        # domain.volume_cache = "unsafe"
 
        # Use virtiofs for two-way host<->guest file sharing
-       override.vm.synced_folder ".", "/home/vagrant/devel", type: "virtiofs"
+       override.vm.synced_folder ".", "/home/vagrant/govertone", type: "virtiofs"
      end
   end
  end
