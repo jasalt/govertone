@@ -67,36 +67,29 @@
   # Setup X11 desktop with OpenBox
 
   config.vm.provision "shell", inline: <<-SHELL
-  # Install Xorg, Openbox, and lightdm
   sudo dnf install -y xorg-x11-server-Xorg xorg-x11-xinit \
-    xorg-x11-drv-qxl openbox obconf xdg-utils xterm \
-    lightdm lightdm-gtk python3-gobject-base
+    xorg-x11-drv-qxl openbox obconf xdg-utils xterm
 
-  # Enable lightdm service
-  sudo systemctl enable lightdm
-
-  # Configure automatic login for vagrant user
-  sudo sed -i 's/^#autologin-user=.*/autologin-user=vagrant/' /etc/lightdm/lightdm.conf
-  sudo sed -i 's/^#autologin-user-timeout=.*/autologin-user-timeout=0/' /etc/lightdm/lightdm.conf
-
-  # Create .xinitrc for vagrant user (used by lightdm session)
-  echo 'exec openbox-session' > /home/vagrant/.xinitrc
-  chown vagrant:vagrant /home/vagrant/.xinitrc
-
-  # Ensure lightdm uses the default X session (which reads ~/.xinitrc)
-  # For Fedora, the default session is usually 'gnome' but we override by setting lightdm to use openbox
-  # Alternatively, set the session in lightdm.conf:
-  sudo sed -i 's/^#user-session=.*/user-session=openbox/' /etc/lightdm/lightdm.conf
-
-  # Create a session file for openbox if not present
-  sudo mkdir -p /usr/share/xsessions
-  cat << EOF | sudo tee /usr/share/xsessions/openbox.desktop
-[Desktop Entry]
-Name=Openbox
-Comment=Openbox
-Exec=openbox-session
-Type=Application
+  # Autologin vagrant on tty1 and start X for that session.
+  echo 'vagrant:vagrant' | sudo chpasswd
+  sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+  cat <<'EOF' | sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf >/dev/null
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin vagrant --noclear %I $TERM
 EOF
+
+  cat <<'EOF' | sudo tee /etc/profile.d/vagrant-startx.sh >/dev/null
+if [ "$(id -un)" = vagrant ] && [ "$(tty)" = /dev/tty1 ] && [ -z "$DISPLAY" ]; then
+  exec startx
+fi
+EOF
+
+  echo 'exec openbox-session' | sudo tee /home/vagrant/.xinitrc >/dev/null
+  sudo chown vagrant:vagrant /home/vagrant/.xinitrc
+  sudo systemctl daemon-reload
+  sudo systemctl enable getty@tty1
+  sudo systemctl restart getty@tty1
 SHELL
 
   # Create the "nuancier" box
