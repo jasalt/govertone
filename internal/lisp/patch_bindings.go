@@ -119,7 +119,7 @@ func parameterFromVM(v vm.Value) (patchmodel.ParameterValue, error) {
 			return patchmodel.ParameterValue{}, err
 		}
 		instrument := ""
-		if iv := entries["instrument"]; iv != nil {
+		if iv := entries["instrument"]; iv != nil && iv != vm.NIL {
 			instrument, err = keywordName(iv, "reference instrument")
 			if err != nil {
 				return patchmodel.ParameterValue{}, err

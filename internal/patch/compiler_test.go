@@ -108,6 +108,12 @@ func TestRoutingResolution(t *testing.T) {
 	if compiled.Patch[0].Units[1].Parameters["target"] == 0 {
 		t.Fatal("target was not resolved")
 	}
+	generated := mustUnit(t, "oscillator", nil)
+	generatedRef := mustUnit(t, "send", ParameterMap{"target": RefParam(UnitReference{Unit: "unit-0", Port: "transpose"})})
+	generatedInstrument, _ := NewInstrument("generated", 1, generated, generatedRef, mustUnit(t, "out", nil))
+	if _, err = c.Compile(PatchSpec{Instruments: []InstrumentSpec{generatedInstrument}}); err == nil || !strings.Contains(err.Error(), "requires an explicit :id") {
+		t.Fatalf("generated reference accepted: %v", err)
+	}
 	bad := mustUnit(t, "send", ParameterMap{"target": RefParam(UnitReference{Unit: "missing", Port: "transpose"})})
 	in, _ = NewInstrument("bad", 1, osc, bad, mustUnit(t, "out", nil))
 	if _, err = c.Compile(PatchSpec{Instruments: []InstrumentSpec{in}}); err == nil || !strings.Contains(err.Error(), "unknown referenced unit") {

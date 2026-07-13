@@ -37,6 +37,21 @@ func TestLowLevelPatchAPIAndStructuredValidation(t *testing.T) {
 	}
 }
 
+func TestLocalReferenceBinding(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	_, err = a.Lisp.Eval(`(defsynth routed {:voices 2}
+	  (oscillator {:type :sine} {:id :main-osc})
+	  (send {:target (ref :main-osc :transpose) :amount 64})
+	  (out {:gain 72}))`)
+	if err != nil {
+		t.Fatalf("local ref failed: %v", err)
+	}
+}
+
 func TestDefsynthDynamicSineAndElision(t *testing.T) {
 	a, err := app.New(io.Discard, io.Discard)
 	if err != nil {

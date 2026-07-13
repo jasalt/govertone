@@ -42,14 +42,17 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 	}
 	numericIDs := map[InstrumentID]map[UnitID]int{}
 	unitTypes := map[InstrumentID]map[UnitID]UnitType{}
+	explicitIDs := map[InstrumentID]map[UnitID]bool{}
 	nextNumericID := 1
 	totalUnits := 0
 	for _, in := range normalized.Instruments {
 		numericIDs[in.ID] = map[UnitID]int{}
 		unitTypes[in.ID] = map[UnitID]UnitType{}
+		explicitIDs[in.ID] = map[UnitID]bool{}
 		for _, u := range in.Units {
 			numericIDs[in.ID][u.ID] = nextNumericID
 			unitTypes[in.ID][u.ID] = u.Type
+			explicitIDs[in.ID][u.ID] = u.ExplicitID
 			nextNumericID++
 			totalUnits++
 		}
@@ -85,6 +88,10 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 					targetID, ok := targets[ref.Unit]
 					if !ok {
 						diagnostics = append(diagnostics, diag("unknown-reference-unit", in.ID, unitIndex, u.ID, name, contextMessage(in.ID, unitIndex, u, name, fmt.Sprintf("unknown referenced unit :%s", ref.Unit))))
+						continue
+					}
+					if !explicitIDs[targetInstrument][ref.Unit] {
+						diagnostics = append(diagnostics, diag("unknown-reference-unit", in.ID, unitIndex, u.ID, name, contextMessage(in.ID, unitIndex, u, name, fmt.Sprintf("referenced unit :%s requires an explicit :id", ref.Unit))))
 						continue
 					}
 					port, ok := modulationPort(string(unitTypes[targetInstrument][ref.Unit]), ref.Port)
