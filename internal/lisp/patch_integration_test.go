@@ -98,11 +98,16 @@ func TestInvalidRedefinitionRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := a.PatchRegistry.Snapshot()
+	beforeHandle, _ := a.Lisp.Eval(`dynamic-tone`)
 	_, err = a.Lisp.Eval(`(defsynth dynamic-tone {:voices 4} (mulp) (out {:gain 80}))`)
 	if err == nil || !strings.Contains(err.Error(), "requires 4 stack values") {
 		t.Fatalf("bad diagnostic %v", err)
 	}
 	after := a.PatchRegistry.Snapshot()
+	afterHandle, handleErr := a.Lisp.Eval(`dynamic-tone`)
+	if handleErr != nil || beforeHandle.String() != afterHandle.String() {
+		t.Fatalf("failed definition replaced synth var: before=%s after=%s err=%v", beforeHandle, afterHandle, handleErr)
+	}
 	if before.Generation != after.Generation || before.Fingerprint != after.Fingerprint {
 		t.Fatal("invalid definition changed registry")
 	}
