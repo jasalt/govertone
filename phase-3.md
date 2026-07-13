@@ -1,5 +1,6 @@
-Phase 3 Specification: Live Controls, Automation, MIDI, Patch Transitions, and nREPL
-1. Purpose
+# Phase 3 Specification: Live Controls, Automation, MIDI, Patch Transitions, and nREPL
+
+## 1. Purpose
 
 Extend the Phase 1 and Phase 2 let-go music runtime with real-time synth controls, sample-accurate automation, MIDI input, safer live patch transitions, and editor-oriented nREPL access.
 
@@ -19,6 +20,7 @@ Preserve all Phase 1 and Phase 2 scheduling, validation, and safety guarantees.
 
 Target usage:
 
+```lisp
 (defsynth acid-lead
   {:voices 8
    :params
@@ -57,9 +59,11 @@ Target usage:
   (gain {:gain (param :velocity)})
 
   (out {:gain 72}))
+```
 
 Interactive use:
 
+```lisp
 (play :acid-lead :c4 {:dur 4})
 
 (ctl :acid-lead :cutoff 82)
@@ -71,9 +75,11 @@ Interactive use:
       {:at 4
        :dur 8
        :curve :linear})
+```
 
 MIDI mapping:
 
+```lisp
 (midi-bind! {:device "Virtual Keyboard"
              :channel 1}
             :acid-lead)
@@ -83,11 +89,13 @@ MIDI mapping:
                 :cc 74}
                :acid-lead
                :cutoff)
-2. Relationship to Earlier Phases
+```
+
+## 2. Relationship to Earlier Phases
 
 Phase 3 builds on the completed Phase 1 and Phase 2 systems.
 
-2.1 Phase 1 dependencies
+### 2.1 Phase 1 dependencies
 
 Phase 3 assumes the existence of:
 
@@ -101,7 +109,8 @@ spectral and signal-level analysis;
 block-size invariance tests;
 event traces;
 bounded command queues.
-2.2 Phase 2 dependencies
+
+### 2.2 Phase 2 dependencies
 
 Phase 3 assumes the existence of:
 
@@ -121,7 +130,8 @@ routing validation;
 patch fingerprints;
 patch update acknowledgements;
 stable synth handles.
-2.3 Compatibility requirement
+
+### 2.3 Compatibility requirement
 
 All Phase 1 and Phase 2 acceptance tests must continue to pass.
 
@@ -135,7 +145,8 @@ symbolic instrument identity;
 stale-handle protection;
 offline validation;
 error reporting.
-3. Primary Goals
+
+## 3. Primary Goals
 
 Phase 3 shall demonstrate that:
 
@@ -153,7 +164,8 @@ Incompatible patch changes can be crossfaded without blocking the audio callback
 nREPL evaluation remains outside the audio rendering path.
 Real-time and offline rendering produce equivalent control behavior.
 Control and transition correctness can be validated automatically.
-4. Non-goals
+
+## 4. Non-goals
 
 Phase 3 shall not include:
 
@@ -181,7 +193,7 @@ full pattern-language implementation.
 
 Pattern generation and higher-level algorithmic composition may be implemented in a later phase.
 
-5. Core Architectural Decision
+## 5. Core Architectural Decision
 
 Sointu patch parameters are ordinarily compiled into patch bytecode. Recompiling the entire patch for every controller movement is not acceptable.
 
@@ -189,6 +201,7 @@ Phase 3 shall introduce a host-control extension that allows selected unit param
 
 Conceptually:
 
+```text
 compiled unit parameter
         +
 normal Sointu modulation
@@ -196,16 +209,19 @@ normal Sointu modulation
 external control value
         =
 effective parameter value
+```
 
 The host-control implementation must operate without evaluating let-go code or rebuilding patches on the audio thread.
 
-6. Sointu Control Extension
-6.1 Required interface
+## 6. Sointu Control Extension
+
+### 6.1 Required interface
 
 Introduce an internal synthesis interface that extends the Phase 1 and Phase 2 synth abstraction.
 
 Recommended form:
 
+```go
 type ControlledSynth interface {
     Synth
 
@@ -229,10 +245,11 @@ type ControlledSynth interface {
 
     ControlBindingCount() int
 }
+```
 
 The precise interface may differ, but it must provide equivalent behavior.
 
-6.2 Persistent controls
+### 6.2 Persistent controls
 
 External controls shall be persistent.
 
@@ -246,36 +263,43 @@ the note or voice is invalidated.
 
 This differs from transient Sointu modulation ports that may be cleared after use.
 
-6.3 Parameter evaluation
+### 6.3 Parameter evaluation
 
 The controlled Go VM should calculate an effective unit parameter using a documented formula.
 
 Recommended model:
 
+```text
 effective :=
     baseParameter +
     transientModulation +
     scaledExternalControl
+```
 
 For absolute-value controls, the compiler may instead calculate:
 
+```text
 effective :=
     externalControl
+```
 
 or:
 
+```text
 effective :=
     baseParameter +
     externalControlOffset
+```
 
 The representation must be consistent and schema-driven.
 
 The user-facing API must not expose internal normalized offsets unless explicitly requested.
 
-6.4 Binding table
+### 6.4 Binding table
 
 Every compiled external control target shall have an immutable binding descriptor.
 
+```go
 type ControlBinding struct {
     Index         ControlBindingIndex
     InstrumentID  InstrumentID
@@ -289,12 +313,13 @@ type ControlBinding struct {
     Minimum       float32
     Maximum       float32
 }
+```
 
 Bindings are generation-specific.
 
 Long-lived user code must refer to controls symbolically rather than by binding index.
 
-6.5 Upstream modification policy
+### 6.5 Upstream modification policy
 
 The coding agent shall first determine whether the pinned Sointu version exposes enough internals to implement persistent controls without a fork.
 
@@ -312,7 +337,7 @@ include a plan for upstream submission or removal.
 
 Phase 3 does not require controlled native or WebAssembly export.
 
-6.6 Fallback restriction
+### 6.6 Fallback restriction
 
 Using Synth.Update for every control event is not an acceptable primary implementation.
 
@@ -321,10 +346,12 @@ Patch recompilation may only be used for:
 structural synth redefinition;
 non-controllable compile-time parameters;
 explicit user requests for patch installation.
-7. Proposed Repository Changes
+
+## 7. Proposed Repository Changes
 
 Extend the repository with:
 
+```text
 letgo-sointu/
 ├── internal/
 │   ├── control/
@@ -412,14 +439,17 @@ letgo-sointu/
     ├── automation.lg
     ├── midi-performance.lg
     └── live-redefinition.lg
+```
 
 Package names may vary, but the responsibilities must remain separated.
 
-8. Named Synth Parameters
-8.1 DSL extension
+## 8. Named Synth Parameters
+
+### 8.1 DSL extension
 
 Extend defsynth options with a :params map.
 
+```lisp
 (defsynth filtered-lead
   {:voices 8
    :params
@@ -439,10 +469,13 @@ Extend defsynth options with a :params map.
      :doc "Per-note velocity"}}}
 
   ...)
-8.2 Parameter descriptor
+```
+
+### 8.2 Parameter descriptor
 
 Add a typed descriptor:
 
+```go
 type SynthParameter struct {
     Name          ParameterID
     Default       float64
@@ -456,8 +489,13 @@ type SynthParameter struct {
     Documentation string
     Metadata      map[string]any
 }
-8.3 Parameter ID
+```
+
+### 8.3 Parameter ID
+
+```go
 type ParameterID string
+```
 
 Requirements:
 
@@ -476,14 +514,18 @@ gain
 velocity
 pan
 bend
-8.4 Required declaration fields
+
+### 8.4 Required declaration fields
 
 Each parameter must define:
 
+```lisp
 {:default value}
+```
 
 Optional fields:
 
+```lisp
 {:min value
  :max value
  :scope :instrument|:voice
@@ -492,49 +534,63 @@ Optional fields:
  :units "Hz"
  :doc "..."
  :curve :linear|:exponential}
+```
 
 Defaults:
 
+```text
 :min       0
 :max       128
 :scope     :instrument
 :rate      :control
 :smoothing 0
 :curve     :linear
+```
 
 The default range may be overridden by the coding agent if a more suitable schema-driven default is required.
 
-8.5 Parameter references
+### 8.5 Parameter references
 
 Add:
 
+```lisp
 (param :cutoff)
+```
 
 param returns a typed symbolic parameter reference.
 
 Unit parameter maps may use this reference:
 
+```lisp
 (filter {:frequency (param :cutoff)})
-8.6 Parameter transforms
+```
+
+### 8.6 Parameter transforms
 
 Support optional compile-time transforms:
 
+```lisp
 (param :cutoff {:scale 0.5
                 :offset 32})
+```
 
 Equivalent conceptual mapping:
 
+```text
 unit value = control × scale + offset
+```
 
 Supported transform fields:
 
+```lisp
 {:scale number
  :offset number
  :clamp true|false}
+```
 
 Arbitrary let-go functions are not permitted as audio-time transforms.
 
-8.7 Parameter validation
+### 8.7 Parameter validation
 
 The compiler shall validate:
 
@@ -549,62 +605,76 @@ valid curve;
 compatible unit target;
 compatible parameter range;
 duplicate conflicting bindings.
-8.8 Multiple targets
+
+### 8.8 Multiple targets
 
 One named parameter may target multiple unit parameters.
 
 Example:
 
+```lisp
 (filter {:frequency (param :tone)})
 (gain {:gain (param :tone {:scale 0.25
                            :offset 64})})
+```
 
 All bindings must be included in the compiled control table.
 
-8.9 Unused parameters
+### 8.9 Unused parameters
 
 An unused declared parameter should produce a warning:
 
+```text
 Synth :lead declares parameter :brightness, but no unit references it.
+```
 
 The synth may still compile.
 
-8.10 Undeclared references
+### 8.10 Undeclared references
 
 Referencing an undeclared parameter is an error:
 
+```text
 Synth :lead references parameter :cuttof, but it is not declared.
 Did you mean :cutoff?
-9. Control Scope
-9.1 Instrument scope
+```
+
+## 9. Control Scope
+
+### 9.1 Instrument scope
 
 An instrument-scoped parameter applies to every voice of the synth.
 
 Example:
 
+```lisp
 (ctl :lead :cutoff 80)
+```
 
 The value becomes the current instrument value and applies to:
 
 active voices;
 voices triggered later;
 all voices in the current generation.
-9.2 Voice scope
+
+### 9.2 Voice scope
 
 A voice-scoped parameter may vary independently per active note.
 
 Example:
 
+```lisp
 (def note
   (play :lead :c4
         {:dur 4
          :params {:velocity 110}}))
 
 (ctl note :velocity 72)
+```
 
 A voice-scoped update must verify note-handle ownership and generation.
 
-9.3 Default inheritance
+### 9.3 Default inheritance
 
 When a voice is triggered:
 
@@ -613,10 +683,12 @@ apply current instrument-level defaults where relevant;
 apply bus mappings;
 apply note-specific :params;
 start scheduled automation attached to the note.
-9.4 Precedence
+
+### 9.4 Precedence
 
 The effective value precedence shall be:
 
+```text
 note-local automation
     overrides
 note-local explicit control
@@ -626,10 +698,11 @@ instrument automation or bus mapping
 instrument explicit control
     overrides
 declared default
+```
 
 A simpler implementation may merge explicit control and automation into one lane, but observed behavior must match this precedence.
 
-9.5 Stale handles
+### 9.5 Stale handles
 
 A stale note handle must not modify controls on a newly allocated voice.
 
@@ -640,66 +713,92 @@ patch generation;
 voice index;
 voice ownership epoch;
 parameter ID.
-10. Control API
+
+## 10. Control API
 
 Expose control functions in:
 
+```lisp
 music.control
+```
 
 and optionally refer common functions into:
 
+```lisp
 music.core
-10.1 ctl
+```
+
+### 10.1 ctl
 
 Instrument-scoped:
 
+```lisp
 (ctl :lead :cutoff 80)
 (ctl lead :cutoff 80)
+```
 
 Voice-scoped:
 
+```lisp
 (ctl note-handle :velocity 95)
+```
 
 Multiple controls:
 
+```lisp
 (ctl :lead
      {:cutoff 80
       :resonance 42})
+```
 
 Scheduled control:
 
+```lisp
 (ctl :lead
      :cutoff
      80
      {:at 4})
+```
 
 Return:
 
+```lisp
 {:control-event 81
  :target :lead
  :parameter :cutoff
  :value 80
  :scheduled-frame 88200}
-10.2 control-value
+```
+
+### 10.2 control-value
+
+```lisp
 (control-value :lead :cutoff)
 (control-value note-handle :velocity)
+```
 
 Return:
 
+```lisp
 {:value 80
  :target :lead
  :parameter :cutoff
  :frame 88200
  :generation 7
  :source :explicit}
+```
 
 In real-time mode, the reported value may describe the latest audio-thread-acknowledged value rather than a pending future value.
 
-10.3 controls
+### 10.3 controls
+
+```lisp
 (controls :lead)
+```
 
 Return:
 
+```lisp
 [{:id :cutoff
   :default 64
   :min 0
@@ -713,13 +812,18 @@ Return:
   :min 0
   :max 127
   :scope :voice}]
-10.4 reset-control!
+```
+
+### 10.4 reset-control!
+
+```lisp
 (reset-control! :lead :cutoff)
 (reset-control! note-handle :velocity)
+```
 
 Reset to the currently applicable default or inherited value.
 
-10.5 Control validation
+### 10.5 Control validation
 
 ctl shall reject:
 
@@ -734,12 +838,17 @@ queue overflow.
 
 Values outside range shall not be silently clamped unless an explicit option is used:
 
+```lisp
 (ctl :lead :cutoff 180 {:clamp true})
-11. Control Commands
-11.1 Event kind
+```
+
+## 11. Control Commands
+
+### 11.1 Event kind
 
 Extend the scheduler:
 
+```go
 const (
     EventTrigger EventKind = iota
     EventRelease
@@ -751,7 +860,11 @@ const (
     EventSetBus
     EventPatchTransition
 )
-11.2 Command structure
+```
+
+### 11.2 Command structure
+
+```go
 type ControlCommand struct {
     EventID      uint64
     Frame        FrameIndex
@@ -762,7 +875,9 @@ type ControlCommand struct {
     Generation   PatchGeneration
     Ownership    VoiceOwnership
 }
-11.3 Application timing
+```
+
+### 11.3 Application timing
 
 Control commands shall be applied at their exact scheduled frame.
 
@@ -771,10 +886,12 @@ When a control event occurs inside a render block:
 render until the event frame;
 apply the control;
 continue rendering.
-11.4 Ordering at the same frame
+
+### 11.4 Ordering at the same frame
 
 Default ordering:
 
+```text
 patch transition completion;
 note releases;
 bus updates;
@@ -783,6 +900,7 @@ note triggers;
 note-local controls;
 automation starts;
 global stop operations.
+```
 
 The exact ordering may be adjusted, but it must be:
 
@@ -792,18 +910,21 @@ tested.
 
 A note with :params must receive those parameter values before its first rendered sample.
 
-12. Smoothing
-12.1 Purpose
+## 12. Smoothing
+
+### 12.1 Purpose
 
 Abrupt parameter changes can produce clicks or zipper noise.
 
 Each parameter may declare smoothing:
 
+```lisp
 :smoothing 0.01
+```
 
 The value is measured in seconds.
 
-12.2 Smoothing model
+### 12.2 Smoothing model
 
 Use a deterministic built-in smoothing model.
 
@@ -815,23 +936,26 @@ or a linear ramp of the declared duration.
 
 The selected model must be documented and stable.
 
-12.3 Audio-rate evaluation
+### 12.3 Audio-rate evaluation
 
 Smoothing shall be evaluated by the audio engine, not through repeated scheduler events.
 
 State per control lane should include:
 
+```go
 type SmoothedValue struct {
     Current   float64
     Target    float64
     Remaining uint64
     Step      float64
 }
-12.4 Zero smoothing
+```
+
+### 12.4 Zero smoothing
 
 A smoothing duration of zero applies the value as an exact step at the scheduled frame.
 
-12.5 Validation
+### 12.5 Validation
 
 Tests must confirm:
 
@@ -841,13 +965,16 @@ monotonic progression;
 independence from render block size;
 no overshoot;
 finite values.
-13. Automation
-13.1 Purpose
+
+## 13. Automation
+
+### 13.1 Purpose
 
 Automation schedules deterministic control movement over musical time.
 
 Example:
 
+```lisp
 (ramp :lead
       :cutoff
       32
@@ -855,7 +982,11 @@ Example:
       {:at 4
        :dur 8
        :curve :linear})
-13.2 Automation segment
+```
+
+### 13.2 Automation segment
+
+```go
 type AutomationSegment struct {
     ID          AutomationID
     Target      ControlTarget
@@ -867,7 +998,9 @@ type AutomationSegment struct {
     Curve       AutomationCurve
     Sequence    uint64
 }
-13.3 Supported curves
+```
+
+### 13.3 Supported curves
 
 Required:
 
@@ -884,22 +1017,34 @@ ease-in-out
 
 Arbitrary Lisp functions are not allowed as real-time curves.
 
-13.4 Curve semantics
-Linear
+### 13.4 Curve semantics
+
+#### Linear
+
+```text
 v(t) = start + (end - start) × t
-Exponential
+```
+
+#### Exponential
 
 Both endpoints must be strictly positive.
 
+```text
 v(t) = start × (end/start)^t
-Smoothstep
+```
+
+#### Smoothstep
+
+```text
 s(t) = 3t² - 2t³
 v(t) = start + (end - start) × s(t)
-Hold
+```
+
+#### Hold
 
 Keep the start value until the final frame, then apply the end value.
 
-13.5 Frame inclusivity
+### 13.5 Frame inclusivity
 
 Automation semantics must define exact endpoints.
 
@@ -908,53 +1053,71 @@ Recommended:
 start value is applied at StartFrame;
 end value is applied at EndFrame;
 interpolation occurs for frames strictly between them.
-13.6 ramp
+
+### 13.6 ramp
+
+```lisp
 (ramp target parameter end-value options)
+```
 
 Use current acknowledged value as the start:
 
+```lisp
 (ramp :lead :cutoff 96
       {:at 4
        :dur 8
        :curve :linear})
+```
 
 Explicit start value:
 
+```lisp
 (ramp :lead :cutoff 32 96
       {:at 4
        :dur 8
        :curve :linear})
+```
 
 Return:
 
+```lisp
 {:automation 17
  :target :lead
  :parameter :cutoff
  :start-frame 88200
  :end-frame 264600
  :curve :linear}
-13.7 automate
+```
+
+### 13.7 automate
 
 Support a sequence of points:
 
+```lisp
 (automate :lead
           :cutoff
           [{:beat 0 :value 32}
            {:beat 2 :value 96 :curve :linear}
            {:beat 6 :value 48 :curve :smoothstep}])
+```
 
 The control side must compile points into deterministic automation segments before enqueueing them.
 
-13.8 Cancellation
+### 13.8 Cancellation
+
+```lisp
 (cancel-automation! automation-handle)
+```
 
 Cancellation may be immediate or scheduled:
 
+```lisp
 (cancel-automation! automation-handle {:at 6})
+```
 
 On cancellation, the parameter remains at its value at the cancellation frame unless an explicit reset option is used.
 
-13.9 Overlap policy
+### 13.9 Overlap policy
 
 Only one authoritative automation lane may control a given target parameter at a time.
 
@@ -968,12 +1131,14 @@ The replaced automation handle becomes inactive.
 
 Alternative explicit modes:
 
+```lisp
 {:replace true}
 {:reject-overlap true}
+```
 
 No implicit summing of arbitrary automation lanes is required.
 
-13.10 Automation limits
+### 13.10 Automation limits
 
 Configurable safeguards:
 
@@ -983,13 +1148,15 @@ maximum scheduled automation horizon: configurable
 
 Queue overflow must produce an explicit error.
 
-14. Control Buses
-14.1 Purpose
+## 14. Control Buses
+
+### 14.1 Purpose
 
 A named control bus holds one value that can drive multiple synth parameters.
 
 Example:
 
+```lisp
 (defbus brightness
   {:default 64
    :min 0
@@ -999,12 +1166,19 @@ Example:
 (map-control! brightness :pad :cutoff)
 
 (bus-set! brightness 92)
-14.2 Bus ID
+```
+
+### 14.2 Bus ID
+
+```go
 type BusID string
+```
 
 Bus IDs are stable symbolic identities independent of patch generations.
 
-14.3 Bus descriptor
+### 14.3 Bus descriptor
+
+```go
 type ControlBus struct {
     ID      BusID
     Default float64
@@ -1012,53 +1186,75 @@ type ControlBus struct {
     Maximum float64
     Current float64
 }
-14.4 defbus
+```
+
+### 14.4 defbus
+
+```lisp
 (defbus brightness
   {:default 64
    :min 0
    :max 128})
+```
 
 The form defines a let-go var containing a bus handle.
 
-14.5 bus-set!
+### 14.5 bus-set!
+
+```lisp
 (bus-set! brightness 80)
 (bus-set! :brightness 80 {:at 4})
+```
 
 Bus changes use the same sample-accurate scheduler as direct controls.
 
-14.6 map-control!
+### 14.6 map-control!
+
+```lisp
 (map-control! brightness
               :lead
               :cutoff)
+```
 
 Optional transform:
 
+```lisp
 (map-control! brightness
               :lead
               :cutoff
               {:scale 0.75
                :offset 16})
-14.7 unmap-control!
+```
+
+### 14.7 unmap-control!
+
+```lisp
 (unmap-control! brightness
                 :lead
                 :cutoff)
+```
 
 After unmapping, the parameter returns to its direct instrument control value.
 
-14.8 Bus automation
+### 14.8 Bus automation
 
 A bus may be automated:
 
+```lisp
 (ramp brightness
       :value
       32
       100
       {:dur 8})
+```
 
 A dedicated form is also acceptable:
 
+```lisp
 (bus-ramp brightness 100 {:dur 8})
-14.9 Mapping persistence
+```
+
+### 14.9 Mapping persistence
 
 Bus mappings shall use symbolic synth and parameter IDs.
 
@@ -1073,18 +1269,23 @@ the mapping becomes inactive;
 a warning is emitted;
 the bus remains defined;
 the patch update still succeeds unless strict mapping mode is enabled.
-15. Per-note Parameters
-15.1 play extension
+
+## 15. Per-note Parameters
+
+### 15.1 play extension
 
 Extend play options:
 
+```lisp
 (play :lead
       :c4
       {:dur 2
        :params
        {:velocity 108
         :pan 20}})
-15.2 Validation timing
+```
+
+### 15.2 Validation timing
 
 Note parameters shall be validated before the trigger event is accepted.
 
@@ -1092,7 +1293,7 @@ Validation uses the currently installed synth definition.
 
 Future events should also carry the symbolic parameter IDs so they can be revalidated if the patch generation changes before application.
 
-15.3 Patch-change policy
+### 15.3 Patch-change policy
 
 When a future note event reaches its frame:
 
@@ -1106,7 +1307,8 @@ Default:
 
 missing future-event parameter causes that note event to fail
 without affecting other events
-15.4 Reserved parameters
+
+### 15.4 Reserved parameters
 
 Recommended reserved voice-scoped parameters:
 
@@ -1119,14 +1321,17 @@ They are only active when declared or provided through a documented built-in map
 
 Do not silently invent control bindings for undeclared reserved parameters.
 
-16. Patch Diffing
-16.1 Purpose
+## 16. Patch Diffing
+
+### 16.1 Purpose
 
 Phase 2 rebuilt and installed complete aggregate patches.
 
 Phase 3 shall classify changes to select the safest transition strategy.
 
-16.2 Diff result
+### 16.2 Diff result
+
+```go
 type PatchDiff struct {
     OldGeneration PatchGeneration
     NewFingerprint string
@@ -1138,15 +1343,19 @@ type PatchDiff struct {
     Compatible  []InstrumentID
     Incompatible []InstrumentID
 }
-16.3 Change classes
-No change
+```
+
+### 16.3 Change classes
+
+#### No change
 
 Canonical fingerprints are identical.
 
 Action:
 
 elide update
-Control-state change
+
+#### Control-state change
 
 Only current control values changed.
 
@@ -1154,7 +1363,8 @@ Action:
 
 schedule control events
 do not rebuild patch
-Control-schema-compatible change
+
+#### Control-schema-compatible change
 
 Parameter metadata or default values change while DSP and binding layout remain compatible.
 
@@ -1163,7 +1373,8 @@ Action:
 preserve compatible runtime controls;
 apply new defaults where no explicit value exists;
 avoid a structural patch transition where possible.
-DSP-compatible change
+
+#### DSP-compatible change
 
 Unit layout and voice count remain compatible enough for in-place Sointu update.
 
@@ -1171,14 +1382,16 @@ Action:
 
 use Synth.Update at a render boundary
 preserve unaffected controls and handles where safe
-DSP-incompatible change
+
+#### DSP-incompatible change
 
 Unit structure, voice count, routing, or instrument position changes incompatibly.
 
 Action:
 
 use dual-engine transition or explicitly documented hard swap
-16.4 Compatibility fingerprint
+
+### 16.4 Compatibility fingerprint
 
 Create a compatibility fingerprint separate from the full instrument fingerprint.
 
@@ -1196,8 +1409,12 @@ It should exclude:
 documentation;
 source location;
 harmless metadata.
-17. Patch Transition Planner
-17.1 Transition plan
+
+## 17. Patch Transition Planner
+
+### 17.1 Transition plan
+
+```go
 type TransitionPlan struct {
     Strategy          TransitionStrategy
     Changed           []InstrumentID
@@ -1208,7 +1425,9 @@ type TransitionPlan struct {
     ControlMigration  []ControlMigration
     BusMigration      []BusMigration
 }
-17.2 Strategies
+```
+
+### 17.2 Strategies
 
 Required:
 
@@ -1223,34 +1442,40 @@ identical patch       → no-op
 compatible update     → in-place
 incompatible update   → crossfade
 crossfade unavailable → hard-swap with warning
-17.3 Explicit override
+
+### 17.3 Explicit override
 
 defsynth and patch installation may accept:
 
+```lisp
 {:transition :auto}
 {:transition :in-place}
 {:transition :crossfade}
 {:transition :hard}
 {:crossfade 0.02}
+```
 
 Unsafe overrides must be rejected.
 
-18. Crossfaded Patch Replacement
-18.1 Purpose
+## 18. Crossfaded Patch Replacement
+
+### 18.1 Purpose
 
 Crossfading reduces clicks and abrupt discontinuities during incompatible structural updates.
 
-18.2 Dual-engine model
+### 18.2 Dual-engine model
 
 During a crossfade:
 
+```text
 old ControlledSynth ── gain 1 → 0 ──┐
                                     ├─ stereo output
 new ControlledSynth ── gain 0 → 1 ──┘
+```
 
 Both engines render for the configured transition duration.
 
-18.3 Default duration
+### 18.3 Default duration
 
 Default:
 
@@ -1262,7 +1487,7 @@ Configurable range:
 
 A duration of zero becomes a hard swap.
 
-18.4 Transition behavior
+### 18.4 Transition behavior
 
 At the transition frame:
 
@@ -1279,7 +1504,8 @@ Recommended policy:
 
 release all changed-instrument voices on the old engine at fade start;
 allow unchanged instruments to migrate or remain active only when proven compatible.
-18.5 Crossfade curve
+
+### 18.5 Crossfade curve
 
 Required:
 
@@ -1292,9 +1518,12 @@ equal-power
 
 Equal-power form:
 
+```text
 oldGain = cos(t × π/2)
 newGain = sin(t × π/2)
-18.6 Engine construction
+```
+
+### 18.6 Engine construction
 
 The new controlled synth must be fully constructed before it is submitted to the audio thread.
 
@@ -1310,7 +1539,8 @@ compile a patch;
 allocate unbounded state;
 evaluate Lisp;
 open files.
-18.7 CPU budget
+
+### 18.7 CPU budget
 
 Dual rendering temporarily increases CPU load.
 
@@ -1322,12 +1552,13 @@ crossfade underruns
 
 If the measured render budget cannot support the requested crossfade, report a warning or reject the transition according to configuration.
 
-18.8 Offline determinism
+### 18.8 Offline determinism
 
 Crossfaded transitions must be deterministic and block-size invariant.
 
-19. Control Migration Across Patch Generations
-19.1 Symbolic migration
+## 19. Control Migration Across Patch Generations
+
+### 19.1 Symbolic migration
 
 Migrate controls by:
 
@@ -1339,7 +1570,7 @@ compatible scope
 
 Do not migrate by binding index.
 
-19.2 Migration rules
+### 19.2 Migration rules
 
 When a parameter remains compatible:
 
@@ -1366,7 +1597,8 @@ do not migrate;
 reset to default;
 cancel related automation;
 emit a warning.
-19.3 Removed parameters
+
+### 19.3 Removed parameters
 
 When a parameter is removed:
 
@@ -1374,7 +1606,8 @@ cancel its automation;
 deactivate related bus mappings;
 invalidate direct control handles;
 emit structured diagnostics.
-19.4 Automation migration
+
+### 19.4 Automation migration
 
 An active automation lane may migrate only when:
 
@@ -1386,8 +1619,9 @@ new generation has valid bindings.
 
 Otherwise cancel at the transition frame.
 
-20. MIDI Architecture
-20.1 Goals
+## 20. MIDI Architecture
+
+### 20.1 Goals
 
 MIDI support shall provide:
 
@@ -1400,7 +1634,10 @@ pitch bend;
 deterministic mapping;
 virtual or replay-based automated tests;
 timestamp conversion into scheduler frames.
-20.2 Backend interface
+
+### 20.2 Backend interface
+
+```go
 type MIDIBackend interface {
     Devices(ctx context.Context) ([]MIDIDevice, error)
     OpenInput(ctx context.Context, id MIDIDeviceID) (MIDIInput, error)
@@ -1410,12 +1647,13 @@ type MIDIInput interface {
     Events() <-chan MIDIEvent
     Close() error
 }
+```
 
 Use a pinned Go MIDI library or a small ALSA sequencer adapter.
 
 The backend must be isolated behind this interface.
 
-20.3 Fedora backend
+### 20.3 Fedora backend
 
 Preferred Linux path:
 
@@ -1425,7 +1663,9 @@ PipeWire MIDI may be supported indirectly where exposed through ALSA.
 
 The agent must document actual Fedora 44 behavior discovered during implementation.
 
-20.4 MIDI event
+### 20.4 MIDI event
+
+```go
 type MIDIEvent struct {
     DeviceID  MIDIDeviceID
     Timestamp time.Time
@@ -1434,9 +1674,11 @@ type MIDIEvent struct {
     Data1     uint8
     Data2     uint8
 }
+```
 
 Parsed forms shall include:
 
+```go
 type NoteOn struct {
     Channel  uint8
     Note     uint8
@@ -1459,7 +1701,9 @@ type PitchBend struct {
     Channel uint8
     Value   int16
 }
-20.5 Real-time timestamping
+```
+
+### 20.5 Real-time timestamping
 
 MIDI input shall be converted into scheduler frames using a monotonic audio-clock snapshot.
 
@@ -1469,7 +1713,8 @@ input timestamp;
 current audio frame;
 configurable input latency compensation;
 events that arrive after their desired frame.
-20.6 Late MIDI events
+
+### 20.6 Late MIDI events
 
 Default policy:
 
@@ -1485,21 +1730,29 @@ MIDI events received
 late MIDI events
 maximum MIDI lateness
 dropped MIDI events
-21. MIDI Mapping
-21.1 Note binding
+
+## 21. MIDI Mapping
+
+### 21.1 Note binding
+
+```lisp
 (midi-bind!
   {:device "Virtual Keyboard"
    :channel 1}
   :lead)
+```
 
 Return:
 
+```lisp
 {:binding 4
  :type :notes
  :device "Virtual Keyboard"
  :channel 1
  :instrument :lead}
-21.2 Note behavior
+```
+
+### 21.2 Note behavior
 
 For each MIDI note-on with velocity greater than zero:
 
@@ -1518,7 +1771,8 @@ Repeated same-pitch notes require a deterministic stack or queue of handles.
 Recommended:
 
 LIFO per device/channel/note
-21.3 Velocity mapping
+
+### 21.3 Velocity mapping
 
 When the synth declares a voice-scoped :velocity parameter:
 
@@ -1526,44 +1780,64 @@ MIDI velocity 0–127 maps directly to declared range
 
 Default scaling:
 
+```text
 min + velocity/127 × (max-min)
+```
 
 When no velocity parameter exists:
 
 note still triggers;
 velocity is recorded in the event trace;
 no synthetic amplitude control is added.
-21.4 CC binding
+
+### 21.4 CC binding
+
+```lisp
 (midi-cc-bind!
   {:device "Controller"
    :channel 1
    :cc 74}
   :lead
   :cutoff)
+```
 
 Optional transform:
 
+```lisp
 {:min 20
  :max 110
  :curve :linear
  :smoothing 0.01}
-21.5 Pitch bend
+```
+
+### 21.5 Pitch bend
+
+```lisp
 (midi-pitch-bind!
   {:device "Controller"
    :channel 1}
   :lead
   :bend
   {:semitones 2})
+```
 
 Pitch bend requires a declared compatible parameter.
 
 No hidden oscillator mutation is required.
 
-21.6 Unbinding
+### 21.6 Unbinding
+
+```lisp
 (midi-unbind! binding-handle)
-21.7 Binding inspection
+```
+
+### 21.7 Binding inspection
+
+```lisp
 (midi-bindings)
-21.8 Device disconnection
+```
+
+### 21.8 Device disconnection
 
 On device loss:
 
@@ -1572,40 +1846,58 @@ release active notes created by that device;
 preserve mapping definitions for optional reconnection;
 emit a structured event;
 do not crash the audio engine.
-22. MIDI CLI
-22.1 List devices
+
+## 22. MIDI CLI
+
+### 22.1 List devices
+
+```bash
 lgs midi list
+```
 
 Output:
 
+```text
 ID      Name                  Direction
 12:0    Virtual Keyboard      input
 20:0    USB MIDI Controller   input
+```
 
 Support JSON:
 
+```bash
 lgs midi list --json
-22.2 Monitor
+```
+
+### 22.2 Monitor
+
+```bash
 lgs midi monitor --device "Virtual Keyboard"
+```
 
 Print parsed messages and timestamps.
 
-22.3 Replay
+### 22.3 Replay
+
+```bash
 lgs midi replay \
     --input testdata/midi/scale.midilog \
     --output out/midi-scale.wav \
     --duration 8s
+```
 
 The replay format should be a deterministic timestamped event log rather than requiring Standard MIDI File support.
 
 Example:
 
+```json
 {"frame":0,"type":"note-on","channel":1,"note":60,"velocity":100}
 {"frame":22050,"type":"note-off","channel":1,"note":60,"velocity":0}
+```
 
 Standard MIDI File support is optional.
 
-22.4 Doctor integration
+### 22.4 Doctor integration
 
 lgs doctor shall report:
 
@@ -1616,27 +1908,35 @@ MIDI replay functionality.
 
 A missing hardware device must not fail headless acceptance.
 
-23. nREPL
-23.1 Purpose
+## 23. nREPL
+
+### 23.1 Purpose
 
 Provide editor-oriented interactive evaluation without placing editor protocol logic on the audio thread.
 
-23.2 Server startup
+### 23.2 Server startup
 
 CLI:
 
+```bash
 lgs repl --nrepl 0
+```
 
 Port 0 requests an available local port.
 
 Output:
 
+```text
 nREPL listening on 127.0.0.1:43817
+```
 
 Optionally write:
 
+```text
 .nrepl-port
-23.3 Binding
+```
+
+### 23.3 Binding
 
 Default bind address:
 
@@ -1644,13 +1944,15 @@ Default bind address:
 
 Binding to non-loopback addresses requires an explicit option:
 
+```bash
 --nrepl-bind 0.0.0.0
+```
 
 The application must print a security warning for non-loopback binding.
 
 Authentication and TLS are deferred.
 
-23.4 Evaluation model
+### 23.4 Evaluation model
 
 Every nREPL evaluation must pass through the same serialized or safely concurrent let-go evaluation boundary used by the terminal REPL.
 
@@ -1668,7 +1970,8 @@ call the audio engine directly;
 mutate patch registry state without the normal APIs;
 bypass scheduling;
 evaluate on the audio thread.
-23.5 Sessions
+
+### 23.5 Sessions
 
 Each nREPL client session should maintain:
 
@@ -1680,7 +1983,7 @@ last exception.
 
 Patch, synth, control, and scheduler state remain process-global.
 
-23.6 Required operations
+### 23.6 Required operations
 
 At minimum:
 
@@ -1692,11 +1995,11 @@ interrupt
 load-file
 stdin
 
-Exact support depends on let-go’s nREPL facilities.
+Exact support depends on let-go's nREPL facilities.
 
 The coding agent shall inspect the pinned let-go version and document supported operations.
 
-23.7 Interrupt behavior
+### 23.7 Interrupt behavior
 
 Interrupting evaluation shall:
 
@@ -1704,7 +2007,8 @@ stop or cancel the control-side evaluation where supported;
 not stop audio;
 not roll back already acknowledged patch or scheduling operations;
 not corrupt later evaluations.
-23.8 Editor validation
+
+### 23.8 Editor validation
 
 Automated tests shall establish a raw nREPL connection and verify:
 
@@ -1717,10 +2021,11 @@ interrupt does not stop audio.
 
 Full CIDER compatibility certification is not required.
 
-24. let-go API Summary
+## 24. let-go API Summary
 
 Required additions:
 
+```lisp
 (param parameter-id)
 (param parameter-id transform-options)
 
@@ -1752,18 +2057,23 @@ Required additions:
 (midi-bindings)
 
 (patch-transition-options)
+```
 
 Existing APIs such as play, release, defsynth, and synth-info shall be extended rather than replaced.
 
-25. Introspection
-25.1 synth-info
+## 25. Introspection
+
+### 25.1 synth-info
 
 Extend output:
 
+```lisp
 (synth-info :lead)
+```
 
 Example:
 
+```lisp
 {:id :lead
  :generation 8
  :voices 8
@@ -1782,26 +2092,47 @@ Example:
    :min 0
    :max 127
    :bindings 1}]}
-25.2 automation-info
+```
+
+### 25.2 automation-info
+
+```lisp
 (automation-info handle)
-25.3 automations
+```
+
+### 25.3 automations
+
+```lisp
 (automations)
 (automations :lead)
-25.4 buses
+```
+
+### 25.4 buses
+
+```lisp
 (buses)
-25.5 transition-info
+```
+
+### 25.5 transition-info
+
+```lisp
 (transition-info)
+```
 
 Example:
 
+```lisp
 {:active true
  :old-generation 7
  :new-generation 8
  :start-frame 88200
  :end-frame 89082
  :curve :equal-power}
-26. Offline Rendering
-26.1 Canonical behavior
+```
+
+## 26. Offline Rendering
+
+### 26.1 Canonical behavior
 
 Offline mode remains the canonical deterministic validation path.
 
@@ -1815,22 +2146,28 @@ dual-engine crossfade;
 MIDI dispatcher;
 voice allocator;
 scheduler.
-26.2 MIDI replay
+
+### 26.2 MIDI replay
 
 Offline scripts may load deterministic MIDI event logs:
 
+```lisp
 (midi-replay! "testdata/midi/filter-sweep.midilog")
+```
 
 or use the CLI replay command.
 
-26.3 Control trace
+### 26.3 Control trace
 
 Add:
 
+```bash
 --control-trace out/controls.json
+```
 
 Example:
 
+```json
 {
   "events": [
     {
@@ -1844,11 +2181,15 @@ Example:
     }
   ]
 }
-26.4 Automation trace
+```
+
+### 26.4 Automation trace
 
 Add:
 
+```bash
 --automation-trace out/automation.json
+```
 
 Include:
 
@@ -1858,11 +2199,14 @@ curves;
 cancellation;
 migration;
 final values.
-26.5 MIDI trace
+
+### 26.5 MIDI trace
 
 Add:
 
+```bash
 --midi-trace out/midi.json
+```
 
 Include:
 
@@ -1872,18 +2216,21 @@ scheduler event;
 note handle;
 lateness;
 mapping.
-27. Automated Audio Validation
+
+## 27. Automated Audio Validation
 
 Phase 3 shall extend the Phase 1 and Phase 2 validation framework.
 
-27.1 Control-step validation
+### 27.1 Control-step validation
 
 Define a synth whose cutoff or gain responds measurably to a named parameter.
 
 Render:
 
+```lisp
 (ctl :test :gain 32 {:at 0})
 (ctl :test :gain 96 {:at 4})
+```
 
 Validate:
 
@@ -1893,7 +2240,8 @@ event trace frames match;
 no NaN or Inf;
 no unintended silence;
 smoothing behavior matches declaration.
-27.2 Automation endpoint validation
+
+### 27.2 Automation endpoint validation
 
 Render a linear gain ramp.
 
@@ -1907,7 +2255,7 @@ block-size invariance
 
 Where waveform analysis is ambiguous, record internal control-lane samples in a test-only trace.
 
-27.3 Filter sweep validation
+### 27.3 Filter sweep validation
 
 Render a harmonic-rich oscillator with a low-pass cutoff automation.
 
@@ -1918,7 +2266,8 @@ Required:
 spectral centroid follows the intended direction
 final centroid differs significantly from initial centroid
 no unrelated dominant pitch shift
-27.4 Pan automation validation
+
+### 27.4 Pan automation validation
 
 Where Sointu routing supports controllable pan:
 
@@ -1927,7 +2276,8 @@ compute per-window channel RMS;
 verify energy moves monotonically across channels;
 verify no channel clips;
 verify total power remains within calibrated bounds.
-27.5 Voice-scoped control validation
+
+### 27.5 Voice-scoped control validation
 
 Play two simultaneous notes with different velocity values.
 
@@ -1937,7 +2287,8 @@ both notes use the same synth;
 one note has measurably greater RMS;
 changing one note handle does not modify the other;
 stale handles do not affect reused voices.
-27.6 Bus validation
+
+### 27.6 Bus validation
 
 Map one bus to two synth cutoffs.
 
@@ -1949,7 +2300,8 @@ both synths receive the same scheduled bus events;
 transformed values match mappings;
 both spectra change;
 unmapping one synth stops future bus influence on it.
-27.7 Crossfade validation
+
+### 27.7 Crossfade validation
 
 Create incompatible patch definitions with clearly different waveforms.
 
@@ -1964,11 +2316,14 @@ peak discontinuity at the transition is lower than a hard-swap baseline;
 no clipping;
 crossfade frames match trace;
 result is block-size invariant.
-27.8 Click metric
+
+### 27.8 Click metric
 
 Measure local first differences:
 
+```text
 d[n] = x[n] - x[n-1]
+```
 
 Compare:
 
@@ -1978,7 +2333,7 @@ equal-power crossfade.
 
 The selected default should reduce the maximum transition discontinuity by a calibrated amount.
 
-27.9 MIDI note validation
+### 27.9 MIDI note validation
 
 Replay deterministic MIDI note events.
 
@@ -1991,7 +2346,8 @@ note-off matching;
 repeated-note LIFO behavior;
 no stuck voices;
 event trace consistency.
-27.10 MIDI CC validation
+
+### 27.10 MIDI CC validation
 
 Replay CC 74 from 0 to 127.
 
@@ -2003,7 +2359,8 @@ mapped control range;
 smoothing;
 spectral centroid progression;
 no dropped controller events.
-27.11 nREPL integration validation
+
+### 27.11 nREPL integration validation
 
 Start a headless process with nREPL.
 
@@ -2015,7 +2372,8 @@ schedule a ramp;
 render or inspect status;
 produce an error;
 verify audio engine remains healthy.
-28. Block-size Invariance
+
+## 28. Block-size Invariance
 
 Run control and transition fixtures with:
 
@@ -2037,60 +2395,61 @@ maximum audio difference within established tolerance
 
 Automation must never be quantized to callback boundaries.
 
-29. Required Test Fixtures
-29.1 Controlled gain
+## 29. Required Test Fixtures
+
+### 29.1 Controlled gain
 
 A sine synth with an instrument-scoped gain parameter.
 
-29.2 Controlled filter
+### 29.2 Controlled filter
 
 A saw synth with cutoff and resonance controls.
 
-29.3 Voice velocity
+### 29.3 Voice velocity
 
 A polyphonic synth with a voice-scoped velocity control.
 
-29.4 Linear ramp
+### 29.4 Linear ramp
 
 Gain ramp from low to high over four beats.
 
-29.5 Exponential ramp
+### 29.5 Exponential ramp
 
 Positive-frequency or gain-like parameter ramp.
 
-29.6 Bus mapping
+### 29.6 Bus mapping
 
 One bus controlling two synths with different scale transforms.
 
-29.7 Compatible patch update
+### 29.7 Compatible patch update
 
 Redefinition that preserves control binding layout.
 
-29.8 Incompatible patch update
+### 29.8 Incompatible patch update
 
 Redefinition that changes unit structure and requires crossfade.
 
-29.9 MIDI scale
+### 29.9 MIDI scale
 
 Timestamped note-on and note-off events for one octave.
 
-29.10 MIDI repeated note
+### 29.10 MIDI repeated note
 
 Repeated same-pitch note-on events followed by note-offs.
 
-29.11 MIDI CC sweep
+### 29.11 MIDI CC sweep
 
 Controller values from 0 through 127.
 
-29.12 Invalid control
+### 29.12 Invalid control
 
 Unknown parameter, range violation, stale handle, and scope mismatch.
 
-29.13 Invalid automation
+### 29.13 Invalid automation
 
 Negative duration, invalid exponential endpoints, overlapping strict lane, and excessive segment count.
 
-30. Unit Tests
+## 30. Unit Tests
 
 Required coverage:
 
@@ -2120,11 +2479,14 @@ pitch-bend scaling;
 MIDI lateness calculation;
 nREPL session isolation;
 structured error responses.
-31. Integration Tests
+
+## 31. Integration Tests
 
 Required end-to-end paths:
 
-31.1 Direct control
+### 31.1 Direct control
+
+```text
 let-go ctl
     ↓
 scheduler event
@@ -2136,7 +2498,11 @@ controlled Sointu parameter
 WAV output
     ↓
 spectral validation
-31.2 Automation
+```
+
+### 31.2 Automation
+
+```text
 let-go ramp
     ↓
 automation segments
@@ -2146,7 +2512,11 @@ sample-by-sample evaluator
 control bindings
     ↓
 WAV output
-31.3 MIDI
+```
+
+### 31.3 MIDI
+
+```text
 MIDI replay/backend
     ↓
 mapping
@@ -2156,7 +2526,11 @@ scheduler
 play/ctl/release
     ↓
 controlled synth
-31.4 Patch transition
+```
+
+### 31.4 Patch transition
+
+```text
 defsynth redefinition
     ↓
 patch diff
@@ -2168,7 +2542,11 @@ new controlled engine
 dual-engine render
     ↓
 crossfaded output
-31.5 nREPL
+```
+
+### 31.5 nREPL
+
+```text
 nREPL request
     ↓
 let-go evaluator
@@ -2176,15 +2554,19 @@ let-go evaluator
 normal music API
     ↓
 scheduler/audio engine
+```
 
 Principal integration tests must use the real pinned Sointu implementation or the maintained controlled-VM patch.
 
-32. Race, Fuzz, and Stability Tests
-32.1 Race tests
+## 32. Race, Fuzz, and Stability Tests
+
+### 32.1 Race tests
 
 Run:
 
+```bash
 go test -race ./...
+```
 
 Include concurrent activity:
 
@@ -2196,7 +2578,8 @@ patch compilation;
 patch transition;
 status inspection;
 offline rendering.
-32.2 Fuzz tests
+
+### 32.2 Fuzz tests
 
 Fuzz:
 
@@ -2220,7 +2603,8 @@ no out-of-range binding index;
 no stale handle mutates a current voice;
 failed migration does not corrupt the registry;
 malformed MIDI does not crash the process.
-32.3 Long-running stability
+
+### 32.3 Long-running stability
 
 Run an accelerated offline simulation equivalent to at least one hour of musical time.
 
@@ -2243,8 +2627,10 @@ no stuck notes;
 no dropped events;
 no generation mismatch;
 no invalid samples.
-33. Performance Requirements
-33.1 Control writes
+
+## 33. Performance Requirements
+
+### 33.1 Control writes
 
 A direct control event should not require:
 
@@ -2252,7 +2638,8 @@ patch recompilation;
 heap allocation proportional to voice count on the audio thread;
 synchronous logging;
 blocking locks.
-33.2 Automation
+
+### 33.2 Automation
 
 Automation evaluation is allowed per sample, but must be bounded.
 
@@ -2262,13 +2649,13 @@ Target:
 
 A lower practical limit may be selected after benchmarking and documented.
 
-33.3 MIDI
+### 33.3 MIDI
 
 The MIDI dispatcher should handle controller bursts without blocking the backend reader.
 
 Use bounded queues and explicit overflow reporting.
 
-33.4 Crossfade
+### 33.4 Crossfade
 
 Measure:
 
@@ -2279,7 +2666,7 @@ callback budget utilization.
 
 The application should warn when estimated transition cost exceeds a configurable percentage of the audio callback budget.
 
-33.5 nREPL
+### 33.5 nREPL
 
 Slow editor clients must not block:
 
@@ -2290,7 +2677,7 @@ audio rendering.
 
 Output queues must be bounded.
 
-34. Logging and Observability
+## 34. Logging and Observability
 
 Extend structured logs with:
 
@@ -2313,7 +2700,8 @@ old_generation
 new_generation
 nrepl_session
 nrepl_operation
-34.1 Runtime statistics
+
+### 34.1 Runtime statistics
 
 Add:
 
@@ -2331,12 +2719,14 @@ crossfade underruns
 nREPL sessions
 nREPL evaluations
 nREPL interrupts
-34.2 Trace correlation
+
+### 34.2 Trace correlation
 
 Patch, event, control, automation, MIDI, and transition traces should use common IDs where possible.
 
-35. Error Handling
-35.1 Control errors
+## 35. Error Handling
+
+### 35.1 Control errors
 
 Required codes:
 
@@ -2347,33 +2737,43 @@ invalid-control-value
 stale-control-target
 control-binding-missing
 control-queue-full
-35.2 Automation errors
+
+### 35.2 Automation errors
+
 invalid-automation-duration
 invalid-automation-curve
 invalid-exponential-range
 automation-overlap
 automation-limit-exceeded
 stale-automation-target
-35.3 Bus errors
+
+### 35.3 Bus errors
+
 unknown-bus
 duplicate-bus
 invalid-bus-value
 invalid-bus-mapping
 stale-bus-mapping
-35.4 MIDI errors
+
+### 35.4 MIDI errors
+
 midi-backend-unavailable
 midi-device-not-found
 midi-device-disconnected
 invalid-midi-message
 midi-binding-conflict
 midi-queue-full
-35.5 Transition errors
+
+### 35.5 Transition errors
+
 transition-preparation-failed
 transition-cpu-budget-exceeded
 control-migration-failed
 crossfade-unavailable
 new-engine-initialization-failed
-35.6 nREPL errors
+
+### 35.6 nREPL errors
+
 nrepl-bind-failed
 nrepl-session-not-found
 nrepl-eval-interrupted
@@ -2381,22 +2781,41 @@ nrepl-output-overflow
 
 Errors must remain structured and must not stop audio unless the core audio engine itself fails.
 
-36. Command-line Changes
-36.1 REPL
+## 36. Command-line Changes
+
+### 36.1 REPL
+
+```bash
 lgs repl \
     --nrepl 0 \
     --midi auto \
     --crossfade 20ms
-36.2 Control inspection
+```
+
+### 36.2 Control inspection
+
+```bash
 lgs controls inspect --synth lead
-36.3 Automation validation
+```
+
+### 36.3 Automation validation
+
+```bash
 lgs automation validate \
     --input examples/automation.lg
-36.4 MIDI
+```
+
+### 36.4 MIDI
+
+```bash
 lgs midi list
 lgs midi monitor --device DEVICE
 lgs midi replay --input FILE
-36.5 Render traces
+```
+
+### 36.5 Render traces
+
+```bash
 lgs render \
     --input examples/live-controls.lg \
     --output out/live-controls.wav \
@@ -2404,8 +2823,11 @@ lgs render \
     --automation-trace out/automation.json \
     --patch-trace out/patch.json \
     --midi-trace out/midi.json
-37. Documentation Requirements
-37.1 docs/controls.md
+```
+
+## 37. Documentation Requirements
+
+### 37.1 docs/controls.md
 
 Document:
 
@@ -2418,7 +2840,8 @@ value precedence;
 smoothing;
 range behavior;
 patch migration.
-37.2 docs/automation.md
+
+### 37.2 docs/automation.md
 
 Document:
 
@@ -2429,7 +2852,8 @@ cancellation;
 overlap;
 timing;
 block-size invariance.
-37.3 docs/control-buses.md
+
+### 37.3 docs/control-buses.md
 
 Document:
 
@@ -2439,7 +2863,8 @@ transforms;
 automation;
 patch migration;
 inactive mappings.
-37.4 docs/midi.md
+
+### 37.4 docs/midi.md
 
 Document:
 
@@ -2451,7 +2876,8 @@ pitch bend;
 latency compensation;
 disconnection;
 replay testing.
-37.5 docs/patch-transitions.md
+
+### 37.5 docs/patch-transitions.md
 
 Document:
 
@@ -2463,7 +2889,8 @@ crossfades;
 active-note policy;
 control migration;
 CPU costs.
-37.6 docs/nrepl.md
+
+### 37.6 docs/nrepl.md
 
 Document:
 
@@ -2474,10 +2901,12 @@ editor examples;
 session behavior;
 security;
 interrupt behavior.
-38. Build and Developer Commands
+
+## 38. Build and Developer Commands
 
 Extend the Makefile with:
 
+```text
 make test-controls
 make test-automation
 make test-midi
@@ -2486,10 +2915,11 @@ make test-nrepl
 make benchmark-controls
 make benchmark-crossfade
 make acceptance-phase3
+```
 
 make acceptance shall include all earlier phases plus Phase 3.
 
-39. Continuous Integration
+## 39. Continuous Integration
 
 Required Phase 3 CI stages:
 
@@ -2515,8 +2945,10 @@ A Fedora VM smoke test should validate:
 real audio;
 virtual or physical MIDI when available;
 nREPL connection.
-40. Autonomous Coding-Agent Work Plan
-Milestone 0: Baseline verification
+
+## 40. Autonomous Coding-Agent Work Plan
+
+### Milestone 0: Baseline verification
 
 Deliverables:
 
@@ -2527,11 +2959,13 @@ benchmark baseline.
 
 Exit criteria:
 
+```bash
 make acceptance
+```
 
 passes before Phase 3 changes.
 
-Milestone 1: Parameter model
+### Milestone 1: Parameter model
 
 Deliverables:
 
@@ -2547,7 +2981,8 @@ Exit criteria:
 
 controlled synths compile to symbolic binding plans;
 invalid declarations produce structured errors.
-Milestone 2: Controlled Sointu adapter
+
+### Milestone 2: Controlled Sointu adapter
 
 Deliverables:
 
@@ -2561,7 +2996,8 @@ Exit criteria:
 
 control values affect rendered audio without Synth.Update;
 uncontrolled patches render identically to Phase 2.
-Milestone 3: Control scheduler
+
+### Milestone 3: Control scheduler
 
 Deliverables:
 
@@ -2577,7 +3013,8 @@ Exit criteria:
 
 control events apply at exact frames;
 block-size invariance passes.
-Milestone 4: Smoothing and automation
+
+### Milestone 4: Smoothing and automation
 
 Deliverables:
 
@@ -2593,7 +3030,8 @@ Exit criteria:
 
 endpoints and curves pass deterministic tests;
 spectral sweep validation passes.
-Milestone 5: Control buses
+
+### Milestone 5: Control buses
 
 Deliverables:
 
@@ -2608,7 +3046,8 @@ Exit criteria:
 
 one bus controls multiple synth parameters;
 mapping behavior survives compatible recompilation.
-Milestone 6: Patch diffing
+
+### Milestone 6: Patch diffing
 
 Deliverables:
 
@@ -2623,7 +3062,8 @@ Exit criteria:
 test fixtures classify correctly;
 identical changes remain elided;
 compatible updates preserve controls.
-Milestone 7: Crossfaded transitions
+
+### Milestone 7: Crossfaded transitions
 
 Deliverables:
 
@@ -2639,7 +3079,8 @@ Exit criteria:
 incompatible redefinition crossfades deterministically;
 click metric improves over hard swap;
 no callback deadlock or invalid audio.
-Milestone 8: MIDI backend
+
+### Milestone 8: MIDI backend
 
 Deliverables:
 
@@ -2654,7 +3095,8 @@ Exit criteria:
 
 deterministic replay works headlessly;
 Fedora device enumeration works when devices are present.
-Milestone 9: MIDI mapping
+
+### Milestone 9: MIDI mapping
 
 Deliverables:
 
@@ -2670,7 +3112,8 @@ Exit criteria:
 
 MIDI scale and CC fixtures pass;
 no stuck notes.
-Milestone 10: nREPL
+
+### Milestone 10: nREPL
 
 Deliverables:
 
@@ -2685,7 +3128,8 @@ Exit criteria:
 
 remote evaluation can define, play, and control synths;
 slow clients do not block audio.
-Milestone 11: Validation and hardening
+
+### Milestone 11: Validation and hardening
 
 Deliverables:
 
@@ -2699,12 +3143,14 @@ Fedora 44 smoke tests.
 
 Exit criteria:
 
+```bash
 make acceptance-phase3
 make acceptance
+```
 
 both pass.
 
-41. Agent Operating Rules
+## 41. Agent Operating Rules
 
 The coding agent shall:
 
@@ -2736,37 +3182,47 @@ then correctness
 then deterministic behavior
 then continuity
 then convenience
-42. Acceptance Criteria
+
+## 42. Acceptance Criteria
 
 Phase 3 is complete only when all criteria below are satisfied.
 
-Parameters
+### Parameters
+
 defsynth supports named parameters.
 param references compile into external control bindings.
 parameter IDs remain stable across compatible recompilation.
 instrument and voice scopes work.
 per-note parameter values are applied before the first sample.
 unknown or invalid controls produce structured errors.
-Real-time controls
+
+### Real-time controls
+
 ctl changes audio without patch recompilation.
 controls apply at exact scheduled frames.
 smoothing is deterministic.
 stale note handles cannot modify reused voices.
 current values are introspectable.
-Automation
+
+### Automation
+
 linear, exponential, smoothstep, and hold curves work.
 automation endpoints are exact.
 overlap behavior is deterministic.
 cancellation works.
 automation is block-size invariant.
 active lanes remain bounded.
-Control buses
+
+### Control buses
+
 buses can be declared, updated, and automated.
 one bus can drive multiple controls.
 mappings support scale and offset.
 compatible patch changes preserve mappings.
 removed parameters deactivate mappings safely.
-Patch transitions
+
+### Patch transitions
+
 patch changes are classified.
 identical patches are elided.
 compatible changes use in-place updates where safe.
@@ -2775,7 +3231,9 @@ crossfades do not compile on the audio thread.
 failed transitions retain the previous engine.
 control and bus state migration is symbolic.
 transition traces report exact frames.
-MIDI
+
+### MIDI
+
 devices can be listed.
 note-on and note-off map correctly.
 velocity mapping works.
@@ -2785,14 +3243,18 @@ repeated notes release correctly.
 disconnects do not leave stuck voices.
 replay tests run without hardware.
 MIDI queue overflow is explicit.
-nREPL
+
+### nREPL
+
 the server binds to loopback by default.
 sessions preserve namespace state.
 evaluation reaches the normal let-go APIs.
 interrupt does not stop audio.
 malformed or slow clients do not block rendering.
 headless integration tests pass.
-Audio validation
+
+### Audio validation
+
 controlled-gain fixtures show expected RMS changes.
 filter sweeps show expected spectral-centroid changes.
 voice-scoped controls remain independent.
@@ -2801,7 +3263,9 @@ crossfades reduce discontinuities relative to hard swaps.
 MIDI replay produces expected notes and timing.
 no standard fixture contains NaN, Inf, clipping, unexpected silence, or dropouts.
 block-size invariance remains within established tolerances.
-Quality
+
+### Quality
+
 all Phase 1 tests pass.
 all Phase 2 tests pass.
 all Phase 3 tests pass.
@@ -2812,10 +3276,12 @@ Fedora 44 headless acceptance passes.
 real-time audio, MIDI, and nREPL smoke tests pass where facilities are available.
 documentation is complete.
 dependency and fork information is current.
-43. Demonstration Session
+
+## 43. Demonstration Session
 
 The final demonstration shall support:
 
+```lisp
 (in-ns 'music.core)
 
 (defsynth performance-lead
@@ -2938,6 +3404,7 @@ The final demonstration shall support:
   (gain {:gain (param :velocity)})
 
   (out {:gain 68}))
+```
 
 The demonstration must prove:
 
@@ -2954,12 +3421,14 @@ no audio-thread Lisp evaluation occurs;
 the same session can be driven through nREPL;
 offline rendering produces control, automation, MIDI, and transition traces;
 automated spectral and discontinuity tests pass.
-44. Deferred Phase 4 Boundary
+
+## 44. Deferred Phase 4 Boundary
 
 Phase 3 shall finish with stable interfaces suitable for higher-level algorithmic composition.
 
 Recommended boundaries:
 
+```go
 type MusicalEventSink interface {
     ScheduleNote(NoteEvent) (NoteHandle, error)
     ScheduleControl(ControlEvent) (ControlHandle, error)
@@ -2971,6 +3440,7 @@ type Clock interface {
     BeatToFrame(Beat) (FrameIndex, error)
     FrameToBeat(FrameIndex) Beat
 }
+```
 
 Potential Phase 4 features include:
 

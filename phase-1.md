@@ -1,5 +1,6 @@
-Phase 1 Specification: let-go Interactive Music Runtime on Sointu
-1. Purpose
+# Phase 1 Specification: let-go Interactive Music Runtime on Sointu
+
+## 1. Purpose
 
 Build a minimal but complete interactive music environment that embeds the let-go Lisp runtime inside a Go application and uses Sointu as its synthesis engine.
 
@@ -18,8 +19,9 @@ Run the complete validation suite without requiring audible playback or human li
 
 This phase is intentionally limited to a fixed, precompiled Sointu patch. User-defined synthesis graphs, live patch recompilation, MIDI, pattern languages, editor integration, and externally writable Sointu parameters are deferred.
 
-2. Project goals
-2.1 Primary goals
+## 2. Project goals
+
+### 2.1 Primary goals
 
 The implementation shall demonstrate that:
 
@@ -34,7 +36,7 @@ let-go supports embedding into Go applications and permits Go functions, values,
 
 Sointu exposes note triggering and releasing between render operations, making it suitable for a host-controlled event scheduler.
 
-2.2 Secondary goals
+### 2.2 Secondary goals
 
 The implementation should establish APIs and internal boundaries that can later support:
 
@@ -45,7 +47,8 @@ nREPL;
 MIDI input;
 WebAssembly or native Sointu export;
 automation and control buses.
-2.3 Non-goals
+
+### 2.3 Non-goals
 
 Phase 1 shall not include:
 
@@ -64,20 +67,23 @@ swing or groove templates;
 audio-rate parameter automation;
 persistence of REPL history beyond the current process;
 production-grade hard real-time guarantees.
-3. Target environment
-3.1 Operating system
+
+## 3. Target environment
+
+### 3.1 Operating system
 
 Target:
 
 Fedora Linux 44 Workstation or Fedora Linux 44 Server
 Architecture: x86_64
 
-Fedora 44 is a released Fedora version, and Fedora’s package repositories provide PipeWire packages for it.
+Fedora 44 is a released Fedora version, and Fedora's package repositories provide PipeWire packages for it.
 
-3.2 Audio system
+### 3.2 Audio system
 
 The preferred real-time output path is:
 
+```text
 Application
     ↓
 oto or equivalent Go audio backend
@@ -87,25 +93,29 @@ ALSA or PulseAudio compatibility layer
 PipeWire
     ↓
 physical or virtual audio device
+```
 
 Phase 1 should avoid direct PipeWire API integration unless required by the selected Go audio library. Fedora 44 includes PipeWire and PipeWire compatibility components.
 
 Offline rendering must not depend on PipeWire or any active audio device.
 
-3.3 Go version
+### 3.3 Go version
 
 Use the Go version available from Fedora 44 unless one of the two upstream dependencies requires a newer version.
 
 The agent must record the exact version used:
 
+```bash
 go version
+```
 
 The repository must contain a valid go.mod and go.sum.
 
-3.4 Runtime dependencies
+### 3.4 Runtime dependencies
 
 Required system tools:
 
+```bash
 sudo dnf install -y \
     git \
     golang \
@@ -119,21 +129,25 @@ sudo dnf install -y \
     python3 \
     python3-numpy \
     python3-scipy
+```
 
 Optional diagnostic tools:
 
+```bash
 sudo dnf install -y \
     sox \
     ffmpeg-free \
     pipewire-utils \
     alsa-utils
+```
 
 The coding agent must verify package names using dnf info before assuming they exist.
 
 The main test suite must not depend on SoX or FFmpeg. Audio validation should be implemented in Go where practical, with a Python reference analyzer permitted as an independent cross-check.
 
-4. Source dependency policy
-4.1 Upstream repositories
+## 4. Source dependency policy
+
+### 4.1 Upstream repositories
 
 Use:
 
@@ -142,7 +156,8 @@ https://github.com/nooga/let-go
 
 Sointu:
 https://github.com/vsariola/sointu
-4.2 Dependency pinning
+
+### 4.2 Dependency pinning
 
 Do not track moving branch heads in reproducible builds.
 
@@ -157,11 +172,14 @@ build metadata printed by --version.
 
 Expected output:
 
+```text
 music-runtime 0.1.0
 go: go1.xx.x
 let-go: <commit>
 sointu: <commit>
-4.3 Fork policy
+```
+
+### 4.3 Fork policy
 
 Phase 1 should not modify Sointu or let-go unless an integration blocker is found.
 
@@ -173,7 +191,10 @@ add a regression test;
 keep the patch minimal;
 use a Go replace directive only temporarily;
 document a path for upstreaming or removal.
-5. Proposed repository layout
+
+## 5. Proposed repository layout
+
+```text
 letgo-sointu/
 ├── cmd/
 │   └── lgs/
@@ -235,11 +256,15 @@ letgo-sointu/
 ├── go.sum
 ├── README.md
 └── LICENSE
-6. Runtime architecture
-6.1 Thread and component model
+```
+
+## 6. Runtime architecture
+
+### 6.1 Thread and component model
 
 Use four conceptual domains:
 
+```text
 ┌─────────────────────────────┐
 │ Terminal / stdin            │
 └──────────────┬──────────────┘
@@ -273,10 +298,11 @@ Use four conceptual domains:
 │ - call Sointu Render        │
 │ - publish stereo samples    │
 └─────────────────────────────┘
+```
 
 No arbitrary let-go code may run on the audio render goroutine.
 
-6.2 Real-time safety rule
+### 6.2 Real-time safety rule
 
 The audio render path shall not:
 
@@ -293,7 +319,7 @@ call external processes.
 
 For Phase 1, occasional bounded Go allocations may be tolerated if unavoidable, but tests must include allocation measurements and the code should preallocate audio and command buffers.
 
-6.3 Render granularity
+### 6.3 Render granularity
 
 Internal Sointu rendering must operate at:
 
@@ -315,7 +341,7 @@ Supported block-size test matrix:
 
 The musical output produced by offline rendering must be identical across block sizes within floating-point tolerance.
 
-6.4 Event splitting
+### 6.4 Event splitting
 
 Suppose a render callback requests frames [F, F+N) and an event is scheduled at frame E, where:
 
@@ -332,6 +358,7 @@ This is mandatory for sample-accurate timing.
 
 Pseudo-code:
 
+```go
 func renderBlock(start uint64, frames int) {
     cursor := start
     end := start + uint64(frames)
@@ -351,25 +378,32 @@ func renderBlock(start uint64, frames int) {
         applyAllEventsAt(cursor)
     }
 }
-7. Core domain model
-7.1 Frame
+```
+
+## 7. Core domain model
+
+### 7.1 Frame
 
 A frame is one stereo sample pair.
 
+```go
 type FrameIndex uint64
+```
 
 No internal scheduling API may use wall-clock timestamps for musical ordering.
 
-7.2 Beat
+### 7.2 Beat
 
 Use rational or fixed-point beat positions rather than binary floating-point as the canonical representation.
 
 Recommended representation:
 
+```go
 type Beat struct {
     Numerator   int64
     Denominator int64
 }
+```
 
 Examples:
 
@@ -379,13 +413,15 @@ Examples:
 
 A simplified fixed-point representation is acceptable if it supports at least 960 ticks per quarter note and has overflow checks.
 
-7.3 Tempo
+### 7.3 Tempo
 
 Phase 1 tempo is constant between explicit tempo-change events.
 
+```go
 type Tempo struct {
     BPM float64
 }
+```
 
 Valid range:
 
@@ -398,7 +434,10 @@ For Phase 1, the simpler accepted policy is:
 at converts its beat position to a frame when scheduled;
 changing tempo does not move already scheduled events;
 documentation must state this clearly.
-7.4 Musical event
+
+### 7.4 Musical event
+
+```go
 type EventKind uint8
 
 const (
@@ -418,39 +457,48 @@ type Event struct {
     Note       uint8
     Tempo      float64
 }
+```
 
 Sequence provides deterministic ordering for events at the same frame.
 
-7.5 Note handle
+### 7.5 Note handle
 
 Playing a note returns a stable handle:
 
+```go
 type NoteHandle struct {
     EventID uint64
     Voice   VoiceID
 }
+```
 
 This handle is used for explicit release or cancellation.
 
-8. Fixed instrument patch
-8.1 Requirement
+## 8. Fixed instrument patch
+
+### 8.1 Requirement
 
 The application shall start with a fixed Sointu patch containing at least three instruments:
 
+```lisp
 :sine
 :lead
 :bass
+```
 
 Suggested voice allocation:
 
+```text
 :sine  voices 0–7
 :lead  voices 8–15
 :bass  voices 16–23
+```
 
 At least 24 voices must therefore be configured unless Sointu limits discovered during implementation require a lower number.
 
-8.2 Instrument characteristics
-:sine
+### 8.2 Instrument characteristics
+
+#### :sine
 
 Purpose:
 
@@ -466,7 +514,8 @@ minimal harmonic content;
 moderate attack and release to avoid clicks;
 center-panned;
 deterministic.
-:lead
+
+#### :lead
 
 Purpose:
 
@@ -480,7 +529,8 @@ low-pass filtering;
 short attack;
 moderate release;
 center-panned.
-:bass
+
+#### :bass
 
 Purpose:
 
@@ -492,7 +542,8 @@ oscillator transposed or designed for bass register;
 low-pass filter;
 monophonic-like envelope behavior per allocated voice;
 no uncontrolled DC offset.
-8.3 Patch reproducibility
+
+### 8.3 Patch reproducibility
 
 The patch shall be constructed in Go source, not loaded from an undocumented binary blob.
 
@@ -503,8 +554,10 @@ expected voice ranges;
 expected unit layout;
 a patch fingerprint or serialized fixture;
 a test that catches accidental patch changes.
-9. Voice allocation
-9.1 Per-instrument allocator
+
+## 9. Voice allocation
+
+### 9.1 Per-instrument allocator
 
 Each instrument owns a fixed voice range.
 
@@ -516,7 +569,8 @@ note start frame
 note number
 note handle
 release state
-9.2 Selection policy
+
+### 9.2 Selection policy
 
 When a free voice exists:
 
@@ -532,7 +586,7 @@ lowest voice index
 
 This deterministic rule is required for repeatable offline rendering.
 
-9.3 Voice stealing sequence
+### 9.3 Voice stealing sequence
 
 When stealing:
 
@@ -544,7 +598,7 @@ Mark the old handle stale.
 
 A later release request for a stale handle must be ignored and must not release the new note occupying the same voice.
 
-9.4 Stop-all
+### 9.4 Stop-all
 
 stop-all must:
 
@@ -552,109 +606,156 @@ release every active voice;
 invalidate all note handles;
 preserve the transport position;
 avoid replacing the Sointu synth instance.
-10. let-go API
-10.1 Namespace
+
+## 10. let-go API
+
+### 10.1 Namespace
 
 Expose user functions in:
 
+```lisp
 music.core
+```
 
 The application may automatically refer this namespace into the default REPL namespace.
 
-10.2 Required functions
-play
+### 10.2 Required functions
+
+#### play
+
+```lisp
 (play instrument note)
 (play instrument note options)
+```
 
 Examples:
 
+```lisp
 (play :sine 69)
 (play :sine :a4)
 (play :lead :c4 {:dur 1/2})
+```
 
 Accepted options:
 
+```lisp
 {:dur beat-duration
  :at absolute-beat}
+```
 
 Return value:
 
+```lisp
 {:id 42
  :instrument :lead
  :voice 9
  :note 60
  :start-beat 4
  :start-frame 88200}
+```
 
 Semantics:
 
 no :at: schedule at the current scheduling beat;
 no :dur: note sustains until released;
 :dur: schedule release at start + duration.
-release
+
+#### release
+
+```lisp
 (release note-handle)
+```
 
 Returns:
 
+```lisp
 true
+```
 
 or false when the handle is already stale, released, or unknown.
 
-at
+#### at
+
+```lisp
 (at beat thunk)
+```
 
 For Phase 1, this may evaluate the thunk immediately and bind a dynamic scheduling context so that nested play calls are timestamped at the requested beat.
 
 Example:
 
+```lisp
 (at 4 #(play :sine :a4 {:dur 1}))
+```
 
 An implementation that schedules an opaque Lisp closure for future evaluation is not acceptable because it would require evaluating Lisp on or near the audio thread.
 
 Instead, at must materialize concrete audio commands during control-side evaluation.
 
-tempo
+#### tempo
 
 Getter:
 
+```lisp
 (tempo)
+```
 
 Setter:
 
+```lisp
 (tempo 120)
+```
 
 Return the new BPM.
 
-now
+#### now
+
+```lisp
 (now)
+```
 
 Returns a map:
 
+```lisp
 {:frame 132300
  :beat 6
  :bpm 120.0
  :running true}
-stop-all
+```
+
+#### stop-all
+
+```lisp
 (stop-all)
+```
 
 Returns the number of voices released.
 
-instruments
+#### instruments
+
+```lisp
 (instruments)
+```
 
 Returns:
 
+```lisp
 [{:id :sine :voices 8}
  {:id :lead :voices 8}
  {:id :bass :voices 8}]
-note-number
+```
+
+#### note-number
+
+```lisp
 (note-number :c4)
 (note-number "C#3")
 (note-number 69)
+```
 
 Returns a MIDI note integer.
 
-10.3 Note naming convention
+### 10.3 Note naming convention
 
 Use:
 
@@ -663,12 +764,14 @@ A4 = MIDI 69
 
 Support:
 
+```lisp
 :c4
 :c#4
 :db4
 "C4"
 "C#4"
 "Db4"
+```
 
 Valid MIDI range:
 
@@ -676,7 +779,9 @@ Valid MIDI range:
 
 Invalid note names must produce descriptive errors.
 
-10.4 Example session
+### 10.4 Example session
+
+```lisp
 (in-ns 'music.core)
 
 (tempo 120)
@@ -690,14 +795,23 @@ Invalid note names must produce descriptive errors.
 (now)
 
 (stop-all)
-11. Command-line interface
+```
+
+## 11. Command-line interface
 
 Executable name:
 
+```text
 lgs
-11.1 Required commands
-Interactive real-time mode
+```
+
+### 11.1 Required commands
+
+#### Interactive real-time mode
+
+```bash
 lgs repl
+```
 
 Behavior:
 
@@ -706,33 +820,48 @@ initialize Sointu;
 initialize let-go;
 print startup diagnostics;
 enter the REPL.
-Offline script rendering
+
+#### Offline script rendering
+
+```bash
 lgs render \
     --input testdata/programs/scale.lg \
     --output out/scale.wav \
     --duration 8s
+```
 
 Required options:
 
+```text
 --input
 --output
 --duration
+```
 
 Optional:
 
+```text
 --sample-rate 44100
 --block-size 512
 --tail 2s
 --report out/scale-analysis.json
+```
 
 Only 44,100 Hz is required in Phase 1. Supplying another sample rate must produce a clear unsupported-value error.
 
-Analyze WAV
+#### Analyze WAV
+
+```bash
 lgs analyze \
     --input out/scale.wav \
     --report out/scale-analysis.json
-Self-test
+```
+
+#### Self-test
+
+```bash
 lgs doctor
+```
 
 Checks:
 
@@ -746,17 +875,25 @@ real-time audio availability, reported separately as optional.
 
 The command must exit successfully in a headless VM when offline synthesis works but no physical audio device exists.
 
-Version
+#### Version
+
+```bash
 lgs version
-11.2 Global options
+```
+
+### 11.2 Global options
+
+```text
 --log-level error|warn|info|debug
 --json-logs
 --no-audio
+```
 
 --no-audio shall permit REPL scheduling and offline rendering without opening an output device.
 
-12. Offline rendering
-12.1 Purpose
+## 12. Offline rendering
+
+### 12.1 Purpose
 
 Offline rendering is the canonical path for deterministic tests.
 
@@ -772,7 +909,7 @@ as real-time output.
 
 Only the sink differs.
 
-12.2 Determinism requirement
+### 12.2 Determinism requirement
 
 Given:
 
@@ -787,15 +924,17 @@ the generated floating-point sample stream must be deterministic.
 
 The WAV byte stream should also be deterministic when metadata fields are fixed.
 
-12.3 WAV format
+### 12.3 WAV format
 
 Required output format:
 
+```text
 RIFF/WAVE
 2 channels
 44,100 Hz
 32-bit IEEE float
 little-endian
+```
 
 Optional second export:
 
@@ -803,7 +942,7 @@ Optional second export:
 
 Analysis should operate on float samples before quantization where possible.
 
-12.4 Duration and tail
+### 12.4 Duration and tail
 
 Rendering duration consists of:
 
@@ -816,8 +955,9 @@ Default tail:
 
 The renderer shall stop at the specified endpoint even if a voice remains active.
 
-13. Automated audio validation
-13.1 General strategy
+## 13. Automated audio validation
+
+### 13.1 General strategy
 
 Validation must combine several independent measures.
 
@@ -837,7 +977,8 @@ stereo validation;
 deterministic-render comparison;
 block-size invariance;
 dropout and discontinuity detection.
-13.2 Structural validation
+
+### 13.2 Structural validation
 
 For every rendered fixture, verify:
 
@@ -855,7 +996,8 @@ positive or negative infinity;
 malformed RIFF lengths;
 unexpected channel count;
 duration error greater than one frame.
-13.3 Silence detection
+
+### 13.3 Silence detection
 
 Calculate:
 
@@ -874,7 +1016,8 @@ For silence fixtures:
 
 peak < 1e-7
 RMS < 1e-8
-13.4 Clipping detection
+
+### 13.4 Clipping detection
 
 For float audio, count samples satisfying:
 
@@ -893,7 +1036,8 @@ maximum absolute amplitude
 The fixed patch should target a peak below approximately:
 
 0.9
-13.5 DC-offset validation
+
+### 13.5 DC-offset validation
 
 For each channel:
 
@@ -905,8 +1049,9 @@ abs(DC) < 0.005
 
 For the sine fixture, use a stricter expected threshold if the rendered window contains an integral or near-integral number of cycles.
 
-13.6 Pitch validation
-Single-note fixture
+### 13.6 Pitch validation
+
+#### Single-note fixture
 
 Render:
 
@@ -935,7 +1080,8 @@ absolute error ≤ 0.25 Hz
 The two estimators should agree within:
 
 1.0 Hz
-Multi-note fixture
+
+#### Multi-note fixture
 
 Render separate non-overlapping notes:
 
@@ -947,7 +1093,7 @@ Validate each segment independently.
 
 This detects octave and MIDI-note conversion errors.
 
-13.7 Spectral purity of the sine instrument
+### 13.7 Spectral purity of the sine instrument
 
 For the steady-state window of :sine A4:
 
@@ -967,8 +1113,11 @@ These thresholds may be loosened only when the Sointu patch is shown to produce 
 
 Store final thresholds in:
 
+```text
 testdata/expectations/single-note.json
-13.8 Harmonic profile of lead instrument
+```
+
+### 13.8 Harmonic profile of lead instrument
 
 Render a sustained :lead A4.
 
@@ -987,8 +1136,9 @@ at least three harmonics exceed noise-floor threshold
 
 Do not require exact harmonic amplitudes unless the patch is permanently frozen.
 
-13.9 Timing validation
-Impulse-equivalent onset test
+### 13.9 Timing validation
+
+#### Impulse-equivalent onset test
 
 Sointu instruments may not generate true impulses, so detect note onset from the amplitude envelope.
 
@@ -1018,6 +1168,7 @@ Required jitter between repeated notes:
 
 Because an envelope attack can obscure exact trigger frames, add an internal event trace generated by the renderer:
 
+```json
 {
   "events": [
     {
@@ -1027,6 +1178,7 @@ Because an envelope attack can obscure exact trigger frames, add an internal eve
     }
   ]
 }
+```
 
 Mandatory assertion:
 
@@ -1034,7 +1186,7 @@ scheduled_frame == applied_frame
 
 The waveform test then verifies that audible energy appears within the expected attack window.
 
-13.10 Duration validation
+### 13.10 Duration validation
 
 For a note with:
 
@@ -1049,7 +1201,8 @@ release occurs exactly at scheduled frame;
 envelope tail decays after release;
 audio does not terminate before release;
 audio approaches silence within the configured tail.
-13.11 Stereo validation
+
+### 13.11 Stereo validation
 
 For center-panned fixtures:
 
@@ -1062,7 +1215,8 @@ Also verify:
 
 neither channel is entirely silent
 channels are not swapped relative to any explicitly panned test
-13.12 Dropout detection
+
+### 13.12 Dropout detection
 
 Detect suspicious sequences of exact or near-zero samples during a sustained note.
 
@@ -1079,7 +1233,7 @@ d[n] = x[n] - x[n-1]
 
 Flag discontinuities where the absolute difference exceeds a calibrated threshold. A discontinuity test is especially important around audio block boundaries.
 
-13.13 Block-size invariance
+### 13.13 Block-size invariance
 
 Render the same script using:
 
@@ -1106,12 +1260,14 @@ event quantization to buffers;
 lost state between render calls;
 incorrect callback-boundary logic;
 scheduler bugs.
-13.14 Golden fingerprints
+
+### 13.14 Golden fingerprints
 
 Do not rely solely on a complete binary WAV golden file, because minor floating-point or dependency changes may produce harmless differences.
 
 Store a compact signal fingerprint containing:
 
+```json
 {
   "sample_rate": 44100,
   "channels": 2,
@@ -1126,6 +1282,7 @@ Store a compact signal fingerprint containing:
   "spectral_centroid_hz": 442.0,
   "audio_hash_quantized": "sha256:..."
 }
+```
 
 The quantized audio hash should be computed after rounding samples to a fixed precision, for example:
 
@@ -1133,7 +1290,7 @@ The quantized audio hash should be computed after rounding samples to a fixed pr
 
 Use metric ranges as the main compatibility criterion and the hash as a stronger same-platform regression signal.
 
-13.15 Independent analyzer
+### 13.15 Independent analyzer
 
 Provide two implementations:
 
@@ -1151,12 +1308,15 @@ spectral centroid
 
 Agreement tolerances shall be documented.
 
-14. Required test fixtures
-14.1 Silence
+## 14. Required test fixtures
+
+### 14.1 Silence
 
 Program:
 
+```lisp
 (tempo 120)
+```
 
 Render two seconds.
 
@@ -1165,9 +1325,13 @@ Expected:
 zero or effectively zero signal;
 no active events;
 valid WAV.
-14.2 Single A4 sine
+
+### 14.2 Single A4 sine
+
+```lisp
 (tempo 120)
 (play :sine :a4 {:at 0 :dur 2})
+```
 
 Expected:
 
@@ -1175,22 +1339,30 @@ fundamental near 440 Hz;
 low harmonic distortion;
 no clipping;
 correct trigger and release frames.
-14.3 Octave sequence
+
+### 14.3 Octave sequence
+
+```lisp
 (tempo 120)
 (play :sine :a3 {:at 0 :dur 1})
 (play :sine :a4 {:at 2 :dur 1})
 (play :sine :a5 {:at 4 :dur 1})
+```
 
 Expected:
 
 220 Hz
 440 Hz
 880 Hz
-14.4 Major chord
+
+### 14.4 Major chord
+
+```lisp
 (tempo 120)
 (play :sine :c4 {:at 0 :dur 4})
 (play :sine :e4 {:at 0 :dur 4})
 (play :sine :g4 {:at 0 :dur 4})
+```
 
 Expected spectral peaks near:
 
@@ -1200,7 +1372,7 @@ Expected spectral peaks near:
 
 Allow frequency-dependent tolerances based on FFT resolution.
 
-14.5 Timing grid
+### 14.5 Timing grid
 
 Schedule 16 short notes at eighth-note intervals.
 
@@ -1210,7 +1382,7 @@ Expected event spacing at 120 BPM:
 
 Every applied frame must match exactly.
 
-14.6 Voice stealing
+### 14.6 Voice stealing
 
 Play more simultaneous notes than the selected instrument has voices.
 
@@ -1220,7 +1392,8 @@ no panic;
 deterministic stolen voice;
 stale release handles do not terminate newer notes;
 active voice count never exceeds capacity.
-14.7 Stop-all
+
+### 14.7 Stop-all
 
 Start a chord, invoke stop-all, render the tail.
 
@@ -1229,23 +1402,28 @@ Expected:
 release events for all active voices;
 no active handles afterward;
 signal decays to silence.
-14.8 Invalid input
+
+### 14.8 Invalid input
 
 Test:
 
+```lisp
 (play :missing :c4)
 (play :sine :h9)
 (play :sine 200)
 (tempo 0)
 (at -1 #(play :sine :a4))
+```
 
 Expected:
 
 descriptive let-go errors;
 no panic;
 audio engine remains usable after the error.
-15. Testing layers
-15.1 Unit tests
+
+## 15. Testing layers
+
+### 15.1 Unit tests
 
 Required packages:
 
@@ -1259,10 +1437,12 @@ stale handles;
 WAV encoding and decoding;
 FFT utilities;
 metric calculations.
-15.2 Integration tests
+
+### 15.2 Integration tests
 
 Run:
 
+```text
 let-go script
     ↓
 bindings
@@ -1274,14 +1454,17 @@ Sointu render
 WAV
     ↓
 analysis
+```
 
 No mocked synthesizer in the principal integration suite.
 
-15.3 Race tests
+### 15.3 Race tests
 
 Run:
 
+```bash
 go test -race ./...
+```
 
 Include a test that concurrently:
 
@@ -1289,7 +1472,8 @@ evaluates non-audio Lisp forms;
 schedules notes;
 queries now;
 renders offline blocks.
-15.4 Fuzz tests
+
+### 15.4 Fuzz tests
 
 Use Go fuzzing for:
 
@@ -1301,7 +1485,7 @@ event queue ordering.
 
 Minimum CI fuzz duration may be short, with longer fuzzing available locally.
 
-15.5 Leak and stability test
+### 15.5 Leak and stability test
 
 Run at least ten minutes in automated offline accelerated mode, scheduling thousands of notes.
 
@@ -1313,11 +1497,14 @@ queue remains bounded;
 memory stabilizes after warmup;
 no panic;
 no NaN or Inf samples.
-15.6 Real-time smoke test
+
+### 15.6 Real-time smoke test
 
 Where an audio device is available:
 
+```bash
 lgs repl < testdata/programs/single-note.lg
+```
 
 The test should confirm:
 
@@ -1328,8 +1515,9 @@ process exits normally.
 
 Audible confirmation is not part of automated acceptance.
 
-16. Logging and observability
-16.1 Structured logs
+## 16. Logging and observability
+
+### 16.1 Structured logs
 
 Include fields:
 
@@ -1347,14 +1535,17 @@ underruns
 
 Do not log every rendered audio block at info level.
 
-16.2 Event trace
+### 16.2 Event trace
 
 Offline mode shall optionally produce:
 
+```bash
 --event-trace out/events.json
+```
 
 Schema:
 
+```json
 {
   "sample_rate": 44100,
   "block_size": 512,
@@ -1370,7 +1561,9 @@ Schema:
     }
   ]
 }
-16.3 Runtime statistics
+```
+
+### 16.3 Runtime statistics
 
 Expose at process exit:
 
@@ -1387,14 +1580,20 @@ Offline tests require:
 
 late events = 0
 dropped events = 0
-17. Error handling
-17.1 Principles
+
+## 17. Error handling
+
+### 17.1 Principles
+
 Invalid user code must not terminate the audio process.
 An audio-device failure must not prevent offline rendering.
 Internal invariant violations may stop the process with a detailed error.
 Every goroutine with a lifecycle must participate in cancellation.
 Shutdown must be idempotent.
-17.2 Exit codes
+
+### 17.2 Exit codes
+
+```text
 0 success
 1 general runtime failure
 2 invalid command-line usage
@@ -1402,7 +1601,9 @@ Shutdown must be idempotent.
 4 audio initialization failure
 5 rendering failure
 6 validation failure
-17.3 Queue overflow
+```
+
+### 17.3 Queue overflow
 
 Use bounded queues.
 
@@ -1412,7 +1613,8 @@ REPL-side scheduling returns an explicit error when the future-event queue is fu
 The audio command queue must not silently drop events.
 A queue-overflow counter must be exposed.
 Offline mode must treat overflow as fatal.
-18. Shutdown behavior
+
+## 18. Shutdown behavior
 
 On SIGINT or end-of-input:
 
@@ -1432,10 +1634,11 @@ Maximum shutdown tail:
 
 A second SIGINT may force immediate termination.
 
-19. Build and developer commands
+## 19. Build and developer commands
 
 The repository shall provide:
 
+```text
 make bootstrap
 make build
 make test
@@ -1446,9 +1649,11 @@ make doctor
 make render-fixtures
 make analyze-fixtures
 make acceptance
+```
 
 Suggested definitions:
 
+```makefile
 make test
     go test ./...
 
@@ -1460,33 +1665,45 @@ make test-audio
 
 make acceptance
     build + unit + race + integration + audio validation
+```
 
 The build must not require root access after bootstrap.
 
-20. Continuous integration
-20.1 Required CI stages
+## 20. Continuous integration
+
+### 20.1 Required CI stages
 
 Formatting:
 
+```bash
 test -z "$(gofmt -l .)"
+```
 
 Static checks:
 
+```bash
 go vet ./...
+```
 
 Unit tests:
 
+```bash
 go test ./...
+```
 
 Race tests:
 
+```bash
 go test -race ./...
+```
+
 Offline render fixtures.
 Go audio analysis.
 Python independent metric comparison.
 Block-size invariance.
 Build executable.
 Archive:
+
 WAV fixtures;
 JSON reports;
 event traces;
@@ -1494,17 +1711,17 @@ logs on failure.
 
 CI must run headlessly without PipeWire.
 
-20.2 Fedora-native validation
+### 20.2 Fedora-native validation
 
 At least one CI path or local acceptance script must run in a Fedora 44 container or virtual machine.
 
 A container cannot fully validate physical audio output, so real-time output remains a VM smoke test rather than a container-only criterion.
 
-21. Autonomous coding-agent work plan
+## 21. Autonomous coding-agent work plan
 
 The agent shall implement the project in the following order.
 
-Milestone 0: environment verification
+### Milestone 0: environment verification
 
 Deliverables:
 
@@ -1519,7 +1736,8 @@ Exit criteria:
 go test for imported dependencies succeeds
 minimal let-go expression evaluates
 minimal Sointu offline buffer renders
-Milestone 1: deterministic Sointu renderer
+
+### Milestone 1: deterministic Sointu renderer
 
 Deliverables:
 
@@ -1534,7 +1752,8 @@ Exit criteria:
 A4 fixture renders
 WAV is valid stereo 44.1 kHz
 signal is non-silent and finite
-Milestone 2: transport and scheduler
+
+### Milestone 2: transport and scheduler
 
 Deliverables:
 
@@ -1549,7 +1768,8 @@ Exit criteria:
 
 scheduled_frame == applied_frame for every test event
 64–1024 frame block sizes produce equivalent audio
-Milestone 3: voice allocation
+
+### Milestone 3: voice allocation
 
 Deliverables:
 
@@ -1566,7 +1786,8 @@ Exit criteria:
 polyphony tests pass
 voice stealing is deterministic
 no stale release corrupts a reused voice
-Milestone 4: let-go embedding
+
+### Milestone 4: let-go embedding
 
 Deliverables:
 
@@ -1581,7 +1802,8 @@ Exit criteria:
 
 example let-go programs render correctly
 invalid forms do not terminate the process
-Milestone 5: spectral analyzer
+
+### Milestone 5: spectral analyzer
 
 Deliverables:
 
@@ -1597,7 +1819,8 @@ Exit criteria:
 A4 is detected near 440 Hz
 octave fixture detects 220/440/880 Hz
 silence and clipping tests work
-Milestone 6: real-time output
+
+### Milestone 6: real-time output
 
 Deliverables:
 
@@ -1612,7 +1835,8 @@ Exit criteria:
 application opens Fedora audio output
 callback advances continuously
 REPL evaluation does not block rendering
-Milestone 7: acceptance hardening
+
+### Milestone 7: acceptance hardening
 
 Deliverables:
 
@@ -1624,11 +1848,13 @@ reproducible acceptance command.
 
 Exit criteria:
 
+```bash
 make acceptance
+```
 
 passes from a clean Fedora 44 checkout.
 
-22. Agent operating rules
+## 22. Agent operating rules
 
 The coding agent shall:
 
@@ -1651,8 +1877,9 @@ Leave the repository buildable at every committed milestone.
 
 When the agent encounters ambiguity, it should choose the smallest implementation satisfying this specification and record the decision in docs/architecture.md.
 
-23. Required documentation
-README
+## 23. Required documentation
+
+### README
 
 Must contain:
 
@@ -1664,7 +1891,8 @@ first-note example;
 offline rendering example;
 validation example;
 current limitations.
-docs/architecture.md
+
+### docs/architecture.md
 
 Must explain:
 
@@ -1675,11 +1903,12 @@ scheduling model;
 voice allocation;
 shutdown;
 why offline rendering is canonical for tests.
-docs/repl-api.md
+
+### docs/repl-api.md
 
 Must document every exposed let-go function with examples and errors.
 
-docs/audio-validation.md
+### docs/audio-validation.md
 
 Must explain:
 
@@ -1690,47 +1919,64 @@ onset detection;
 block-size comparison;
 golden fingerprint policy;
 how expected thresholds were calibrated.
-docs/troubleshooting-fedora.md
+
+### docs/troubleshooting-fedora.md
 
 Must include:
 
 checking PipeWire:
 
+```bash
 systemctl --user status pipewire
 systemctl --user status wireplumber
+```
 
 listing sinks:
 
+```bash
 wpctl status
+```
 
 testing ALSA compatibility:
 
+```bash
 aplay -L
+```
 
 running in headless mode:
 
+```bash
 lgs repl --no-audio
+```
 
 rendering without an audio device:
 
+```bash
 lgs render ...
-24. Acceptance criteria
+```
+
+## 24. Acceptance criteria
 
 Phase 1 is complete only when all of the following are true.
 
-Functional
+### Functional
+
 lgs repl starts an embedded let-go REPL.
 (play :sine :a4) produces sound in real-time mode.
 release, at, tempo, now, stop-all, and instruments work.
 Fixed instruments are available.
 Voice stealing is deterministic.
 Errors do not crash the engine.
-Scheduling
+
+### Scheduling
+
 Trigger and release events are applied at their exact scheduled frames.
 Events at identical frames execute in deterministic sequence order.
 Block size does not alter event timing.
 No events are silently dropped.
-Audio
+
+### Audio
+
 Offline WAV output is valid stereo 44.1 kHz audio.
 A4 sine fundamental is detected within 1 Hz of 440 Hz.
 A3/A4/A5 test segments are detected near 220/440/880 Hz.
@@ -1740,7 +1986,9 @@ No standard fixture clips.
 DC offset remains within calibrated limits.
 Sustained fixtures contain no unexpected dropouts.
 Centered fixtures have balanced channels.
-Quality
+
+### Quality
+
 go test ./... passes.
 go test -race ./... passes.
 make acceptance passes headlessly.
@@ -1748,10 +1996,12 @@ Fedora 44 real-time smoke test passes when an audio sink is available.
 Clean shutdown works after normal exit and SIGINT.
 Dependency versions are pinned.
 Architecture and REPL API are documented.
-25. Demonstration script
+
+## 25. Demonstration script
 
 The final Phase 1 demonstration shall include:
 
+```lisp
 (tempo 120)
 
 (play :bass :c2 {:at 0 :dur 4})
@@ -1767,6 +2017,7 @@ The final Phase 1 demonstration shall include:
 (play :sine :c5 {:at 6 :dur 1/2})
 (play :sine :e5 {:at 13/2 :dur 1/2})
 (play :sine :g5 {:at 7 :dur 1})
+```
 
 The script must:
 
@@ -1776,17 +2027,20 @@ Produce a WAV file.
 Produce an event trace.
 Produce a JSON analysis report.
 Pass spectral, timing, amplitude, stereo, and finite-value validation.
-26. Deferred Phase 2 boundary
+
+## 26. Deferred Phase 2 boundary
 
 Phase 1 must finish with an internal interface that permits Phase 2 to replace the fixed patch.
 
 Recommended boundary:
 
+```go
 type PatchProvider interface {
     Patch() sointu.Patch
     Instruments() []InstrumentDefinition
     Fingerprint() string
 }
+```
 
 The rest of the Phase 1 engine should not depend directly on the concrete built-in patch implementation.
 
