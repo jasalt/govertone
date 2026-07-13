@@ -1,0 +1,110 @@
+ # -*- mode: ruby -*-
+ # vi: set ft=ruby :
+ #
+ 
+ VAGRANTFILE_API_VERSION = "2"
+ 
+ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # If you'd prefer to pull your boxes from Hashicorp's repository, you can
+  # replace the config.vm.box and config.vm.box_url declarations with the line below.
+  #
+  # config.vm.box = "fedora/44-cloud-base"
+  config.vm.box = "f44-cloud-libvirt"
+  config.vm.box_url = "https://mirrors.nxthost.com/fedora/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-44-1.7.x86_64.vagrant.libvirt.box"
+
+  config.ssh.forward_x11 = true
+
+  # This is an optional plugin that, if installed, updates the host's /etc/hosts
+  # file with the hostname of the guest VM. In Fedora it is packaged as
+  # vagrant-hostmanager
+  if Vagrant.has_plugin?("vagrant-hostmanager")
+      config.hostmanager.enabled = true
+      config.hostmanager.manage_host = true
+  end
+ 
+  # Vagrant can share the source directory using rsync, NFS, or SSHFS (with the vagrant-sshfs
+  # plugin). Consult the Vagrant documentation if you do not want to use SSHFS.
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  # config.vm.synced_folder ".", "/home/vagrant/devel", type: "sshfs", sshfs_opts_append: "-o nonempty"
+ 
+  # To cache update packages (which is helpful if frequently doing vagrant destroy && vagrant up)
+  # you can create a local directory and share it to the guest's DNF cache. Uncomment the lines below
+  # to create and use a dnf cache directory
+  #
+  # Dir.mkdir('.dnf-cache') unless File.exists?('.dnf-cache')
+  # config.vm.synced_folder ".dnf-cache", "/var/cache/dnf", type: "sshfs", sshfs_opts_append: "-o nonempty"
+ 
+  # Comment this line if you would like to disable the automatic update during provisioning
+  config.vm.provision "shell", inline: "sudo dnf upgrade -y"
+ 
+  # bootstrap and run with ansible
+  config.vm.provision "shell", inline: "sudo dnf -y install python3-dnf python3-libselinux npm find-fd ripgrep chromium-browser docker docker-compose-plugin tmux"
+  # config.vm.provision "ansible" do |ansible|
+  #     ansible.playbook = "devel/ansible/vagrant-playbook.yml"
+  # end
+  config.vm.provision "shell", inline: "sudo npm install -g agent-browser"
+  config.vm.provision "shell", inline: "npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
+
+  host_uid = `id -u`.strip
+  host_gid = `id -g`.strip
+
+  config.vm.provision "shell", inline: <<-SHELL
+  # Install Xorg, Openbox, and lightdm
+  sudo dnf install -y xorg-x11-server-Xorg xorg-x11-xinit \
+    xorg-x11-drv-qxl openbox obconf xdg-utils xterm \
+    lightdm lightdm-gtk
+
+  # Enable lightdm service
+  sudo systemctl enable lightdm
+
+  # Configure automatic login for vagrant user
+  sudo sed -i 's/^#autologin-user=.*/autologin-user=vagrant/' /etc/lightdm/lightdm.conf
+  sudo sed -i 's/^#autologin-user-timeout=.*/autologin-user-timeout=0/' /etc/lightdm/lightdm.conf
+
+  # Create .xinitrc for vagrant user (used by lightdm session)
+  echo 'exec openbox-session' > /home/vagrant/.xinitrc
+  chown vagrant:vagrant /home/vagrant/.xinitrc
+
+  # Ensure lightdm uses the default X session (which reads ~/.xinitrc)
+  # For Fedora, the default session is usually 'gnome' but we override by setting lightdm to use openbox
+  # Alternatively, set the session in lightdm.conf:
+  sudo sed -i 's/^#user-session=.*/user-session=openbox/' /etc/lightdm/lightdm.conf
+
+  # Create a session file for openbox if not present
+  sudo mkdir -p /usr/share/xsessions
+  cat << EOF | sudo tee /usr/share/xsessions/openbox.desktop
+[Desktop Entry]
+Name=Openbox
+Comment=Openbox
+Exec=openbox-session
+Type=Application
+EOF
+SHELL
+
+  # Create the "nuancier" box
+  config.vm.define "nuancier" do |nuancier|
+     nuancier.vm.host_name = "nuancier-dev.example.com"
+ 
+     nuancier.vm.provider :libvirt do |domain, override|
+       domain.cpus = 4
+       domain.graphics_type = "spice"
+       domain.memory = 2048
+       domain.video_type = "qxl"
+
+       # Required for virtiofs shared folders
+       domain.qemu_use_session = false          # use qemu:///system
+       domain.memorybacking :access, mode: "shared"
+
+       # Uncomment the following line if you would like to enable libvirt's unsafe cache
+       # mode. It is called unsafe for a reason, as it causes the virtual host to ignore all
+       # fsync() calls from the guest. Only do this if you are comfortable with the possibility of
+       # your development guest becoming corrupted (in which case you should only need to do a
+       # vagrant destroy and vagrant up to get a new one).
+       #
+       # domain.volume_cache = "unsafe"
+
+       # Use virtiofs for two-way host<->guest file sharing
+       override.vm.synced_folder ".", "/home/vagrant/devel", type: "virtiofs"
+     end
+  end
+ end

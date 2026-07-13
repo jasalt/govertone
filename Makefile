@@ -7,7 +7,7 @@ bootstrap:
 
 build:
 	mkdir -p out
-	$(GO) build -trimpath -o $(LGS) ./cmd/lgs
+	$(GO) build -trimpath -buildvcs=false -o $(LGS) ./cmd/lgs
 
 test:
 	$(GO) test ./...
