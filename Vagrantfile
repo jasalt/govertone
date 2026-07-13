@@ -35,38 +35,42 @@
       config.hostmanager.enabled = true
       config.hostmanager.manage_host = true
   end
- 
+
   # Vagrant can share the source directory using rsync, NFS, or SSHFS (with the vagrant-sshfs
   # plugin). Consult the Vagrant documentation if you do not want to use SSHFS.
   config.vm.synced_folder ".", "/vagrant", disabled: true
   # config.vm.synced_folder ".", "/home/vagrant/devel", type: "sshfs", sshfs_opts_append: "-o nonempty"
- 
+
   # To cache update packages (which is helpful if frequently doing vagrant destroy && vagrant up)
   # you can create a local directory and share it to the guest's DNF cache. Uncomment the lines below
   # to create and use a dnf cache directory
   #
   # Dir.mkdir('.dnf-cache') unless File.exists?('.dnf-cache')
   # config.vm.synced_folder ".dnf-cache", "/var/cache/dnf", type: "sshfs", sshfs_opts_append: "-o nonempty"
- 
+
   # Comment this line if you would like to disable the automatic update during provisioning
   config.vm.provision "shell", inline: "sudo dnf upgrade -y"
- 
-  # bootstrap and run with ansible
-  config.vm.provision "shell", inline: "sudo dnf -y install python3-dnf python3-libselinux npm ripgrep chromium-browser tmux"
-  # config.vm.provision "ansible" do |ansible|
-  #     ansible.playbook = "devel/ansible/vagrant-playbook.yml"
-  # end
+
+  config.vm.provision "shell", inline: "sudo dnf -y install python3-dnf python3-libselinux npm ripgrep tmux make"
+
+  # Bootstrap the govertone project
+  config.vm.provision "shell", inline: "cd /home/vagrant/govertone && make bootstrap"
+
   # config.vm.provision "shell", inline: "sudo npm install -g agent-browser"
   config.vm.provision "shell", inline: "npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
 
+  # Set same UID / GID as host user so shared folder can be accessed without
+  # permission changes
   host_uid = `id -u`.strip
   host_gid = `id -g`.strip
+
+  # Setup X11 desktop with OpenBox
 
   config.vm.provision "shell", inline: <<-SHELL
   # Install Xorg, Openbox, and lightdm
   sudo dnf install -y xorg-x11-server-Xorg xorg-x11-xinit \
     xorg-x11-drv-qxl openbox obconf xdg-utils xterm \
-    lightdm lightdm-gtk
+    lightdm lightdm-gtk python3-gobject-base
 
   # Enable lightdm service
   sudo systemctl enable lightdm
