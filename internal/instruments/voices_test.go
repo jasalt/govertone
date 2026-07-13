@@ -18,6 +18,25 @@ func TestAllocatorDeterminismAndStaleHandle(t *testing.T) {
 		t.Fatal("stale release succeeded")
 	}
 }
+func TestAllocatorGenerationResetInvalidatesHandles(t *testing.T) {
+	definitions := map[InstrumentID]Definition{"x": {"x", 0, 2}}
+	allocator := NewAllocator(definitions)
+	handle, _, _ := allocator.Allocate("x", 60, 0, 100)
+	if handle.Generation != 1 {
+		t.Fatalf("generation %d", handle.Generation)
+	}
+	if invalidated := allocator.Reset(definitions, 2); invalidated != 1 {
+		t.Fatalf("invalidated %d", invalidated)
+	}
+	if allocator.Valid(handle.EventID, 1) {
+		t.Fatal("old generation handle remained valid")
+	}
+	newHandle, _, _ := allocator.Allocate("x", 62, 1, 100)
+	if newHandle.Generation != 2 {
+		t.Fatalf("new generation %d", newHandle.Generation)
+	}
+}
+
 func TestAllocatorReusesEndedVoice(t *testing.T) {
 	a := NewAllocator(map[InstrumentID]Definition{"x": {"x", 0, 2}})
 	h1, _, _ := a.Allocate("x", 60, 0, 10)

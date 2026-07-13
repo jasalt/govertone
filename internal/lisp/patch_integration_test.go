@@ -10,6 +10,7 @@ import (
 	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/audio"
 	"github.com/example/letgo-sointu/internal/clock"
+	"github.com/nooga/let-go/pkg/vm"
 )
 
 const sineDefinition = `(defsynth dynamic-tone {:voices 4}
@@ -237,8 +238,14 @@ func TestRemoveSynthAndVoiceCountUpdate(t *testing.T) {
 	if _, err = a.Lisp.Eval(sineDefinition); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = a.Lisp.Eval(`(def old-note (play :dynamic-tone :a4))`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = a.Lisp.Eval(strings.Replace(sineDefinition, "{:voices 4}", "{:voices 8}", 1)); err != nil {
 		t.Fatal(err)
+	}
+	if released, err := a.Lisp.Eval(`(release old-note)`); err != nil || released != vm.FALSE {
+		t.Fatalf("stale generation release=%v err=%v", released, err)
 	}
 	info, err := a.Lisp.Eval(`(synth-info :dynamic-tone)`)
 	if err != nil || !strings.Contains(info.String(), ":voices 8") {

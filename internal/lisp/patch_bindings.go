@@ -564,7 +564,8 @@ func (r *Runtime) synthsFn(args []vm.Value) (vm.Value, error) {
 	values := make([]vm.Value, 0, len(snapshot.Layout.OrderedIDs))
 	for _, id := range snapshot.Layout.OrderedIDs {
 		in := snapshot.Layout.Instruments[id]
-		values = append(values, mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint)))
+		spec, _ := r.patchRegistry.Definition(id)
+		values = append(values, mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source)))
 	}
 	return vm.NewPersistentVector(values), nil
 }
@@ -582,7 +583,7 @@ func (r *Runtime) synthInfoFn(args []vm.Value) (vm.Value, error) {
 		return vm.NIL, fmt.Errorf("unknown synth :%s", id)
 	}
 	spec, _ := r.patchRegistry.Definition(id)
-	return mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("instrument-index"), vm.Int(in.Index), vm.Keyword("first-voice"), vm.Int(in.FirstVoice), vm.Keyword("unit-count"), vm.Int(len(spec.Units)), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("units"), instrumentToVM(spec).(*vm.PersistentMap).ValueAt(vm.Keyword("units"))), nil
+	return mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("instrument-index"), vm.Int(in.Index), vm.Keyword("first-voice"), vm.Int(in.FirstVoice), vm.Keyword("unit-count"), vm.Int(len(spec.Units)), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source), vm.Keyword("units"), instrumentToVM(spec).(*vm.PersistentMap).ValueAt(vm.Keyword("units"))), nil
 }
 func (r *Runtime) removeSynthFn(args []vm.Value) (vm.Value, error) {
 	if len(args) != 1 {
@@ -656,6 +657,10 @@ func (r *Runtime) patchFingerprintFn(args []vm.Value) (vm.Value, error) {
 	}
 	return vm.String(r.patchRegistry.Snapshot().Fingerprint), nil
 }
+func sourceToVM(source patchmodel.SourceInfo) vm.Value {
+	return mapOf(vm.Keyword("namespace"), vm.String(source.Namespace), vm.Keyword("file"), vm.String(source.File), vm.Keyword("line"), vm.Int(source.Line), vm.Keyword("column"), vm.Int(source.Column))
+}
+
 func (r *Runtime) synthIDValue(v vm.Value) (patchmodel.InstrumentID, error) {
 	if m, ok := v.(*vm.PersistentMap); ok {
 		v = m.ValueAt(vm.Keyword("id"))

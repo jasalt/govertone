@@ -58,6 +58,24 @@ func TestRegistryIdenticalElisionAndRollback(t *testing.T) {
 		t.Fatal("failed update mutated registry")
 	}
 }
+func TestRegistryRejectsStalePreparedUpdate(t *testing.T) {
+	r, _ := NewRegistry(NewCompiler(), minimal(t, "a", "sine", 1))
+	first, err := r.PrepareUpsert(minimal(t, "b", "sine", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := r.PrepareUpsert(minimal(t, "c", "sine", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = r.Commit(first); err != nil {
+		t.Fatal(err)
+	}
+	if err = r.Commit(stale); err == nil {
+		t.Fatal("stale candidate committed")
+	}
+}
+
 func TestRegistryRemoveAndReaddAppends(t *testing.T) {
 	r, _ := NewRegistry(NewCompiler(), minimal(t, "a", "sine", 1), minimal(t, "b", "sine", 1))
 	remove, err := r.PrepareRemove("a")

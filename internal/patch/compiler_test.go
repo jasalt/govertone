@@ -54,6 +54,17 @@ func TestCompilerDiagnostics(t *testing.T) {
 		})
 	}
 }
+func TestDiagnosticCarriesSourceMetadata(t *testing.T) {
+	compiler := NewCompiler()
+	unit := mustUnit(t, "oscillator", ParameterMap{"transpose": IntParam(9999)}, WithSourceInfo(SourceInfo{File: "lead.lg", Line: 12, Column: 4}))
+	instrument, _ := NewInstrument("lead", 1, unit)
+	_, err := compiler.Compile(PatchSpec{Instruments: []InstrumentSpec{instrument}})
+	compileError, ok := err.(*CompileError)
+	if !ok || len(compileError.Diagnostics) == 0 || compileError.Diagnostics[0].Source.File != "lead.lg" || compileError.Diagnostics[0].Source.Line != 12 {
+		t.Fatalf("source metadata missing: %#v", err)
+	}
+}
+
 func TestAliasAndUnknownSuggestion(t *testing.T) {
 	c := NewCompiler()
 	filter := mustUnit(t, "filter", ParameterMap{"freq": IntParam(70)})
