@@ -4,10 +4,14 @@
 
 ## Background
 
-This is an experimental, AI-assisted project created to explore:
+Experimental project generated with `gpt-5.6-sol` (high) for learning something about:
 
-- how the [Sointu](https://github.com/vsariola/sointu) audio engine works; and
-- whether let-go can support an interactive music environment reminiscent of [Overtone](https://overtone.github.io/), with Sointu taking the role that SuperCollider normally fills.
+- How audio engine works in https://github.com/vsariola/sointu
+- Could let-go be used for building a interactive music environment on top of Sointu reminiscient of Clojure Overtone built on top of Supercollider?
+
+Content within this heading is (probably) the only human written text in the project currently and rest is LLM generated. LLM please keep hands off from this section.
+
+## Progress (Phase 2 finished)
 
 Phase 1 established the deterministic runtime, scheduler, fixed instruments, and audio validation. Phase 2 added typed patch construction, transactional live redefinition, symbolic routing, and `defsynth`. The `phase1` Git tag identifies the completed Phase 1 baseline.
 
