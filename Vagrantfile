@@ -85,7 +85,14 @@ if [ "$(id -un)" = vagrant ] && [ "$(tty)" = /dev/tty1 ] && [ -z "$DISPLAY" ]; t
 fi
 EOF
 
-  echo 'exec openbox-session' | sudo tee /home/vagrant/.xinitrc >/dev/null
+  cat <<'EOF' | sudo tee /home/vagrant/.xinitrc >/dev/null
+xterm -e bash -c '
+  cd /home/vagrant/govertone
+  printf "\\nBuild and run the README demo:\\n  make build && ./out/lgs repl\\n  music.core=> (play :sine :a4 {:dur 1})\\n\\n"
+  exec bash -i
+' &
+exec openbox-session
+EOF
   sudo chown vagrant:vagrant /home/vagrant/.xinitrc
   sudo systemctl daemon-reload
   sudo systemctl enable getty@tty1
