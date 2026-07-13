@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	version      = "0.1.0"
+	version      = "0.2.0"
 	letGoCommit  = "79b96e56ceca2961009f93d8255fde65275a2efc"
 	sointuCommit = "c4d0683be728f4e788528c96b4270ef24f77aff5"
 )

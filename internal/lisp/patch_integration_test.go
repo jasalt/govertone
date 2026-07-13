@@ -18,6 +18,24 @@ const sineDefinition = `(defsynth dynamic-tone {:voices 4}
   (mulp)
   (out {:gain 80}))`
 
+func TestLowLevelPatchAPIAndStructuredValidation(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	value, err := a.Lisp.Eval(`(validate-patch
+	  (patch (instrument :bad {:voices 1}
+	    (music.patch/mulp)
+	    (music.patch/out {:gain 80}))))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(value.String(), ":valid false") || !strings.Contains(value.String(), ":stack-underflow") || !strings.Contains(value.String(), ":unit-index 0") {
+		t.Fatalf("unstructured validation result: %s", value)
+	}
+}
+
 func TestDefsynthDynamicSineAndElision(t *testing.T) {
 	a, err := app.New(io.Discard, io.Discard)
 	if err != nil {
@@ -173,6 +191,40 @@ func TestDynamicUpdateBlockSizeInvariance(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestConcurrentRenderAndPatchEvaluation(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	done := make(chan error, 1)
+	go func() {
+		buffer := make([][2]float32, 128)
+		for range 100 {
+			if err := a.Engine.RenderBlock(buffer); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	if _, err = a.Lisp.Eval(`(+ 1 2 3)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(sineDefinition); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(patch-info)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(defsynth invalid-concurrent {:voices 1} (mulp))`); err == nil {
+		t.Fatal("invalid concurrent definition succeeded")
+	}
+	if err = <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

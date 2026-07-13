@@ -1,6 +1,7 @@
 package patch
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -69,6 +70,21 @@ func TestAliasAndUnknownSuggestion(t *testing.T) {
 	}
 	_ = compiled
 }
+func TestDelayTimeCompilesToVarArgs(t *testing.T) {
+	compiler := NewCompiler()
+	oscillator := mustUnit(t, "oscillator", nil)
+	delay := mustUnit(t, "delay", ParameterMap{"delaytime": IntParam(2205)})
+	out := mustUnit(t, "out", nil)
+	instrument, _ := NewInstrument("echo", 1, oscillator, delay, out)
+	compiled, err := compiler.Compile(PatchSpec{Instruments: []InstrumentSpec{instrument}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compiled.Patch[0].Units[1].VarArgs; len(got) != 1 || got[0] != 2205 {
+		t.Fatalf("delay varargs %v", got)
+	}
+}
+
 func TestRoutingResolution(t *testing.T) {
 	c := NewCompiler()
 	osc := mustUnit(t, "oscillator", nil, WithUnitID("main"))
@@ -94,6 +110,25 @@ func TestVoiceLimit(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+func BenchmarkCompileAggregate(b *testing.B) {
+	compiler := NewCompiler()
+	instruments := make([]InstrumentSpec, 8)
+	for i := range instruments {
+		envelope, _ := NewUnit("envelope", nil)
+		oscillator, _ := NewUnit("oscillator", ParameterMap{"type": EnumParam("saw")})
+		mulp, _ := NewUnit("mulp", nil)
+		out, _ := NewUnit("out", nil)
+		instruments[i], _ = NewInstrument(InstrumentID(fmt.Sprintf("bench-%d", i)), 4, envelope, oscillator, mulp, out)
+	}
+	spec := PatchSpec{Instruments: instruments}
+	b.ResetTimer()
+	for range b.N {
+		if _, err := compiler.Compile(spec); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestEverySchemaHasUpstreamUnit(t *testing.T) {
 	r := NewSchemaRegistry()
 	if len(r.Types()) < 20 {

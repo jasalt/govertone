@@ -28,7 +28,7 @@ type Compiler struct {
 }
 
 func NewCompiler() *Compiler {
-	return &Compiler{Schemas: NewSchemaRegistry(), Mode: ModePortable, MaxInstruments: 64, MaxUnitsPerInstrument: 63, MaxAggregateUnits: 2016, MaxVoices: 32, MaxPortableStack: 8}
+	return &Compiler{Schemas: NewSchemaRegistry(), Mode: ModePortable, MaxInstruments: 64, MaxUnitsPerInstrument: 63, MaxAggregateUnits: 4096, MaxVoices: 32, MaxPortableStack: 8}
 }
 
 func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
@@ -69,6 +69,7 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 		unitIndices := map[UnitID]int{}
 		for unitIndex, u := range in.Units {
 			parameters := sointu.ParamMap{}
+			varArgs := []int(nil)
 			for name, value := range u.Parameters {
 				if value.Kind == ParameterReference {
 					ref := value.Reference
@@ -100,10 +101,14 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 					diagnostics = append(diagnostics, diag("invalid-parameter-type", in.ID, unitIndex, u.ID, name, contextMessage(in.ID, unitIndex, u, name, "cannot convert normalized parameter to Sointu integer")))
 					continue
 				}
+				if u.Type == "delay" && name == "delaytime" {
+					varArgs = []int{n}
+					continue
+				}
 				parameters[name] = n
 			}
 			parameters["stereo"] = boolInt(u.Stereo)
-			sUnits[unitIndex] = sointu.Unit{Type: string(u.Type), ID: numericIDs[in.ID][u.ID], Parameters: parameters, Disabled: u.Disabled}
+			sUnits[unitIndex] = sointu.Unit{Type: string(u.Type), ID: numericIDs[in.ID][u.ID], Parameters: parameters, VarArgs: varArgs, Disabled: u.Disabled}
 			unitIndices[u.ID] = unitIndex
 		}
 		if !hasErrors(diagnostics) {
@@ -151,6 +156,9 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 		instrumentSeen[id] = true
 		if raw.Voices < 1 || raw.Voices > c.MaxVoices {
 			diagnostics = append(diagnostics, diag("invalid-voice-count", id, 0, "", "", fmt.Sprintf("Synth :%s voice count must be 1..%d, got %d", id, c.MaxVoices, raw.Voices)))
+		}
+		if len(raw.Metadata.Doc) > 64*1024 {
+			diagnostics = append(diagnostics, diag("metadata-limit-exceeded", id, 0, "", "", fmt.Sprintf("Synth :%s documentation exceeds 64 KiB", id)))
 		}
 		in := InstrumentSpec{ID: id, Voices: raw.Voices, Metadata: raw.Metadata, Units: make([]UnitSpec, 0, len(raw.Units))}
 		unitSeen := map[UnitID]bool{}
@@ -232,6 +240,21 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 			in.Units = append(in.Units, u)
 		}
 		out.Instruments = append(out.Instruments, in)
+	}
+	for i := range diagnostics {
+		for _, instrument := range input.Instruments {
+			if instrument.ID != diagnostics[i].Instrument {
+				continue
+			}
+			diagnostics[i].Source = instrument.Metadata.Source
+			if diagnostics[i].UnitIndex >= 0 && diagnostics[i].UnitIndex < len(instrument.Units) {
+				unitSource := instrument.Units[diagnostics[i].UnitIndex].Metadata.Source
+				if unitSource != (SourceInfo{}) {
+					diagnostics[i].Source = unitSource
+				}
+			}
+			break
+		}
 	}
 	return out, diagnostics
 }

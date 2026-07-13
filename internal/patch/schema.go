@@ -82,6 +82,10 @@ func NewSchemaRegistry() *SchemaRegistry {
 		setDefault(s, "gain", IntParam(128))
 		alias(s, "transpose", "pitch")
 	})
+	r.update("noise", func(s *UnitSchema) {
+		setDefault(s, "shape", IntParam(64))
+		setDefault(s, "gain", IntParam(128))
+	})
 	r.update("envelope", func(s *UnitSchema) {
 		setDefault(s, "attack", IntParam(4))
 		setDefault(s, "decay", IntParam(32))
@@ -95,6 +99,13 @@ func NewSchemaRegistry() *SchemaRegistry {
 		setDefault(s, "resonance", IntParam(128))
 		alias(s, "frequency", "freq", "cutoff")
 		alias(s, "resonance", "res")
+	})
+	r.update("delay", func(s *UnitSchema) {
+		p := s.Parameters["delaytime"]
+		p.Kind = ParameterInteger
+		p.Minimum, p.Maximum = ptr(1), ptr(65535)
+		p.Default = defaultParam(IntParam(11025))
+		s.Parameters["delaytime"] = p
 	})
 	r.update("out", func(s *UnitSchema) { setDefault(s, "gain", IntParam(80)) })
 	r.update("outaux", func(s *UnitSchema) { setDefault(s, "outgain", IntParam(80)); setDefault(s, "auxgain", IntParam(0)) })

@@ -12,7 +12,7 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go test -race ./...
-      - run: make test-audio
+      - run: make test-patch test-audio
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: audio-fixtures, path: out/fixtures/}
@@ -23,4 +23,4 @@ jobs:
       - run: dnf install -y git golang gcc alsa-lib-devel pkgconf-pkg-config make python3 python3-numpy python3-scipy
       - uses: actions/checkout@v4
       - run: go test ./...
-      - run: make build doctor test-audio
+      - run: make build doctor test-patch test-audio

@@ -424,10 +424,40 @@ func (r *Runtime) validatePatchFn(args []vm.Value) (vm.Value, error) {
 }
 func validationMap(compiled *patchmodel.CompiledPatch, err error) vm.Value {
 	if err != nil {
-		return mapOf(vm.Keyword("valid"), vm.FALSE, vm.Keyword("errors"), vm.NewPersistentVector([]vm.Value{mapOf(vm.Keyword("code"), vm.Keyword("patch-compile-failed"), vm.Keyword("message"), vm.String(err.Error()))}), vm.Keyword("warnings"), vm.NewPersistentVector(nil))
+		errors := []vm.Value{}
+		if compileError, ok := err.(*patchmodel.CompileError); ok {
+			for _, diagnostic := range compileError.Diagnostics {
+				if diagnostic.Severity == patchmodel.SeverityError {
+					errors = append(errors, diagnosticToVM(diagnostic))
+				}
+			}
+		}
+		if len(errors) == 0 {
+			errors = append(errors, mapOf(vm.Keyword("code"), vm.Keyword("patch-compile-failed"), vm.Keyword("message"), vm.String(err.Error())))
+		}
+		return mapOf(vm.Keyword("valid"), vm.FALSE, vm.Keyword("errors"), vm.NewPersistentVector(errors), vm.Keyword("warnings"), vm.NewPersistentVector(nil))
 	}
 	return mapOf(vm.Keyword("valid"), vm.TRUE, vm.Keyword("errors"), vm.NewPersistentVector(nil), vm.Keyword("warnings"), vm.NewPersistentVector(nil), vm.Keyword("layout"), layoutToVM(compiled.Layout), vm.Keyword("fingerprint"), vm.String(compiled.Fingerprint))
 }
+func diagnosticToVM(d patchmodel.Diagnostic) vm.Value {
+	return mapOf(vm.Keyword("severity"), vm.Keyword(d.Severity), vm.Keyword("code"), vm.Keyword(d.Code), vm.Keyword("message"), vm.String(d.Message), vm.Keyword("instrument"), func() vm.Value {
+		if d.Instrument == "" {
+			return vm.NIL
+		}
+		return vm.Keyword(d.Instrument)
+	}(), vm.Keyword("unit-index"), vm.Int(d.UnitIndex), vm.Keyword("unit-id"), func() vm.Value {
+		if d.UnitID == "" {
+			return vm.NIL
+		}
+		return vm.Keyword(d.UnitID)
+	}(), vm.Keyword("parameter"), func() vm.Value {
+		if d.Parameter == "" {
+			return vm.NIL
+		}
+		return vm.Keyword(d.Parameter)
+	}())
+}
+
 func compiledSummary(c *patchmodel.CompiledPatch, changed bool) vm.Value {
 	return mapOf(vm.Keyword("music/type"), vm.Keyword("compiled-patch"), vm.Keyword("generation"), vm.Int(c.Generation), vm.Keyword("fingerprint"), vm.String(c.Fingerprint), vm.Keyword("changed"), vm.Boolean(changed), vm.Keyword("layout"), layoutToVM(c.Layout), vm.Keyword("spec"), patchToVM(c.Spec))
 }
@@ -471,6 +501,7 @@ func (r *Runtime) installSynthFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, err
 	}
+	spec.Metadata.Source.Namespace = "music.core"
 	if options, _ := mapEntries(args[1]); options != nil {
 		if explicit := options["id"]; explicit != nil {
 			id, e := keywordName(explicit, "synth :id")

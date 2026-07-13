@@ -1,6 +1,6 @@
 # let-go Sointu music runtime (`lgs`)
 
-`lgs` is an interactive music environment embedding the [let-go](https://github.com/nooga/let-go) Lisp runtime and the pure-Go Sointu VM. It provides three fixed instruments, exact beat scheduling, deterministic offline float WAV rendering, real-time stereo output through Oto/ALSA/PipeWire, and automatic audio analysis.
+`lgs` is an interactive music environment embedding the [let-go](https://github.com/nooga/let-go) Lisp runtime and the pure-Go Sointu VM. It provides exact beat scheduling, deterministic offline float WAV rendering, real-time stereo output through Oto/ALSA/PipeWire, automatic audio analysis, and a transactional `defsynth` patch DSL.
 
 ## Fedora 44 setup
 
@@ -27,6 +27,22 @@ music.core=> (play :sine :a4 {:dur 1})
 
 Use `./out/lgs repl --no-audio` in a headless environment. Lisp evaluation never occurs on the audio callback.
 
+Define and play a synth interactively:
+
+```clojure
+(defsynth bell {:voices 4}
+  (envelope {:attack 4 :decay 40 :sustain 80 :release 55})
+  (oscillator {:type :sine})
+  (mulp)
+  (out {:gain 78}))
+
+(play bell :c5 {:dur 2})
+(synth-info :bell)
+(patch-generation)
+```
+
+Reevaluating the same `defsynth` with changed units transactionally updates Sointu while preserving `:bell`. An invalid redefinition leaves the previous synth and generation active. See [docs/patch-dsl.md](docs/patch-dsl.md).
+
 ## Deterministic rendering and validation
 
 ```sh
@@ -46,6 +62,7 @@ python3 scripts/validate-audio.py --input out/demo.wav
 * `lgs repl [--no-audio]`
 * `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE]`
 * `lgs analyze --input FILE [--report FILE]`
+* `lgs patch compile|validate|inspect --input FILE [--report FILE]`
 * `lgs doctor [--no-audio]`
 * `lgs version`
 
@@ -53,4 +70,4 @@ All commands accept `--log-level error|warn|info|debug` and `--json-logs`. See [
 
 ## Current Phase 1 limitations
 
-Patches are fixed and parameters are not externally writable. There is no MIDI, OSC, sample playback, tempo ramp, swing, pattern language, microphone input, or synthesis graph compilation. Scheduling a tempo change does not move events already converted to frame timestamps. Real-time output requires a CGO-enabled build and ALSA development files; offline operation has no audio-device dependency.
+Synth patches may be defined and redefined, but per-note parameters and externally writable synth controls are not implemented. There is no MIDI, OSC, sample playback, tempo ramp, swing, pattern language, microphone input, native code generation, or arbitrary user DSP opcode support. Scheduling a tempo change does not move events already converted to frame timestamps. Real-time output requires a CGO-enabled build and ALSA development files; offline operation has no audio-device dependency.
