@@ -129,11 +129,9 @@ func alias(s *UnitSchema, name string, aliases ...string) {
 	s.Parameters[name] = p
 }
 func defaultStereo(t string) bool {
-	switch t {
-	case "envelope", "oscillator", "noise", "mulp", "addp", "out", "outaux":
-		return true
-	}
-	return false
+	// The music DSL is stereo-first. Users can explicitly request mono in a
+	// unit options map; units without a stereo parameter ignore this default.
+	return true
 }
 func behavior(t string) StackBehavior {
 	switch t {

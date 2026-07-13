@@ -1,0 +1,107 @@
+package patch
+
+import (
+	"strings"
+	"testing"
+)
+
+func mustUnit(t *testing.T, kind UnitType, p ParameterMap, options ...UnitOption) UnitSpec {
+	t.Helper()
+	u, err := NewUnit(kind, p, options...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+func minimal(t *testing.T, id InstrumentID, kind string, voices int) InstrumentSpec {
+	t.Helper()
+	units := []UnitSpec{mustUnit(t, "envelope", nil), mustUnit(t, "oscillator", ParameterMap{"type": EnumParam(kind)}, WithUnitID("osc")), mustUnit(t, "mulp", nil), mustUnit(t, "out", nil)}
+	in, err := NewInstrument(id, voices, units...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return in
+}
+func TestCompileMinimalAndLayout(t *testing.T) {
+	c := NewCompiler()
+	a, b := minimal(t, "a", "sine", 2), minimal(t, "b", "saw", 3)
+	compiled, err := c.Compile(PatchSpec{Instruments: []InstrumentSpec{a, b}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compiled.Layout.TotalVoices != 5 || compiled.Layout.Instruments["b"].FirstVoice != 2 || len(compiled.Patch) != 2 {
+		t.Fatalf("bad layout %#v", compiled.Layout)
+	}
+	if compiled.Patch[0].Units[1].Parameters["type"] != 0 || compiled.Patch[0].Units[1].Parameters["transpose"] != 64 {
+		t.Fatalf("defaults not normalized: %#v", compiled.Patch[0].Units[1])
+	}
+}
+func TestCompilerDiagnostics(t *testing.T) {
+	c := NewCompiler()
+	cases := []struct {
+		name string
+		unit UnitSpec
+		code string
+	}{{"unit", mustUnit(t, "not-real", nil), "unknown unit type"}, {"parameter", mustUnit(t, "oscillator", ParameterMap{"transpose": IntParam(9999)}), "range"}, {"stack", mustUnit(t, "mulp", nil), "requires 4 stack values"}}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			in, _ := NewInstrument("bad", 1, tt.unit)
+			_, err := c.Compile(PatchSpec{Instruments: []InstrumentSpec{in}})
+			if err == nil || !strings.Contains(err.Error(), tt.code) {
+				t.Fatalf("got %v, want %q", err, tt.code)
+			}
+		})
+	}
+}
+func TestAliasAndUnknownSuggestion(t *testing.T) {
+	c := NewCompiler()
+	filter := mustUnit(t, "filter", ParameterMap{"freq": IntParam(70)})
+	in, _ := NewInstrument("bad", 1, filter)
+	compiled, err := c.Compile(PatchSpec{Instruments: []InstrumentSpec{in}})
+	if err == nil {
+		t.Fatal("effect without input should underflow")
+	}
+	filter = mustUnit(t, "filter", ParameterMap{"freqency": IntParam(70)})
+	in, _ = NewInstrument("bad", 1, filter)
+	_, err = c.Compile(PatchSpec{Instruments: []InstrumentSpec{in}})
+	if err == nil || !strings.Contains(err.Error(), "did you mean :frequency") {
+		t.Fatalf("suggestion missing: %v", err)
+	}
+	_ = compiled
+}
+func TestRoutingResolution(t *testing.T) {
+	c := NewCompiler()
+	osc := mustUnit(t, "oscillator", nil, WithUnitID("main"))
+	send := mustUnit(t, "send", ParameterMap{"target": RefParam(UnitReference{Unit: "main", Port: "transpose"})})
+	in, _ := NewInstrument("routed", 1, osc, send, mustUnit(t, "out", nil))
+	compiled, err := c.Compile(PatchSpec{Instruments: []InstrumentSpec{in}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compiled.Patch[0].Units[1].Parameters["target"] == 0 {
+		t.Fatal("target was not resolved")
+	}
+	bad := mustUnit(t, "send", ParameterMap{"target": RefParam(UnitReference{Unit: "missing", Port: "transpose"})})
+	in, _ = NewInstrument("bad", 1, osc, bad, mustUnit(t, "out", nil))
+	if _, err = c.Compile(PatchSpec{Instruments: []InstrumentSpec{in}}); err == nil || !strings.Contains(err.Error(), "unknown referenced unit") {
+		t.Fatalf("got %v", err)
+	}
+}
+func TestVoiceLimit(t *testing.T) {
+	c := NewCompiler()
+	a, b := minimal(t, "a", "sine", 20), minimal(t, "b", "sine", 20)
+	if _, err := c.Compile(PatchSpec{Instruments: []InstrumentSpec{a, b}}); err == nil || !strings.Contains(err.Error(), "voice count") {
+		t.Fatalf("got %v", err)
+	}
+}
+func TestEverySchemaHasUpstreamUnit(t *testing.T) {
+	r := NewSchemaRegistry()
+	if len(r.Types()) < 20 {
+		t.Fatalf("only %d unit schemas", len(r.Types()))
+	}
+	for _, kind := range r.Types() {
+		if _, ok := r.Schema(kind); !ok {
+			t.Fatal(kind)
+		}
+	}
+}
