@@ -3,6 +3,8 @@ package analysis
 import (
 	"math"
 	"testing"
+
+	"github.com/vsariola/sointu"
 )
 
 func TestAnalyzeSine(t *testing.T) {
@@ -27,6 +29,21 @@ func TestAnalyzeSine(t *testing.T) {
 		t.Fatalf("bad report %#v", r)
 	}
 }
+func TestFloatWAVRoundTrip(t *testing.T) {
+	input := sointu.AudioBuffer{{0.25, -0.5}, {0, 0.75}}
+	encoded, err := input.Wav(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeWAV(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.SampleRate != 44100 || decoded.Channels != 2 || len(decoded.Samples) != len(input) || decoded.Samples[1] != input[1] {
+		t.Fatalf("bad round trip %#v", decoded)
+	}
+}
+
 func TestDecodeRejectsMalformed(t *testing.T) {
 	for _, b := range [][]byte{nil, []byte("RIFFxxxxWAVE"), []byte("not a wave")} {
 		if _, err := DecodeWAV(b); err == nil {

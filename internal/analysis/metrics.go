@@ -28,6 +28,9 @@ type Report struct {
 	DominantFrequencyHz float64        `json:"dominant_frequency_hz"`
 	TimeFrequencyHz     float64        `json:"time_domain_frequency_hz"`
 	SpectralCentroidHz  float64        `json:"spectral_centroid_hz"`
+	THDDB               float64        `json:"total_harmonic_distortion_db"`
+	HarmonicsAbove40DB  int            `json:"harmonics_above_minus_40_db"`
+	CrestFactor         float64        `json:"crest_factor"`
 	StereoCorrelation   float64        `json:"stereo_correlation"`
 	MaxZeroRun          int            `json:"maximum_zero_run"`
 	MaxDiscontinuity    float64        `json:"maximum_discontinuity"`
@@ -53,7 +56,7 @@ func Analyze(w *WAV) (Report, error) {
 	r := Report{SampleRate: w.SampleRate, Channels: w.Channels, Frames: len(w.Samples), Format: fmt.Sprintf("%d-bit format %d", w.Bits, w.Format), Finite: true}
 	r.Left = measure(w.Samples, 0)
 	r.Right = measure(w.Samples, 1)
-	var active, zeroRun int
+	active, firstActive, lastActive := 0, -1, -1
 	h := sha256.New()
 	var lr, l2, r2 float64
 	for i, v := range w.Samples {
@@ -69,12 +72,10 @@ func Analyze(w *WAV) (Report, error) {
 		}
 		if math.Abs(x) > 1e-8 || math.Abs(y) > 1e-8 {
 			active++
-			zeroRun = 0
-		} else {
-			zeroRun++
-			if zeroRun > r.MaxZeroRun {
-				r.MaxZeroRun = zeroRun
+			if firstActive < 0 {
+				firstActive = i
 			}
+			lastActive = i
 		}
 		if i > 0 {
 			d := math.Max(math.Abs(x-float64(w.Samples[i-1][0])), math.Abs(y-float64(w.Samples[i-1][1])))
@@ -91,13 +92,30 @@ func Analyze(w *WAV) (Report, error) {
 	if len(w.Samples) > 0 {
 		r.ActiveFramePercent = 100 * float64(active) / float64(len(w.Samples))
 	}
+	// Exclude leading silence and the release tail: only an internal zero run
+	// can be a dropout in a sustained signal.
+	zeroRun := 0
+	for i := firstActive; i >= 0 && i <= lastActive; i++ {
+		v := w.Samples[i]
+		if math.Abs(float64(v[0])) < 1e-8 && math.Abs(float64(v[1])) < 1e-8 {
+			zeroRun++
+			if zeroRun > r.MaxZeroRun {
+				r.MaxZeroRun = zeroRun
+			}
+		} else {
+			zeroRun = 0
+		}
+	}
 	if l2 > 0 && r2 > 0 {
 		r.StereoCorrelation = lr / math.Sqrt(l2*r2)
+	}
+	if rms := math.Max(r.Left.RMS, r.Right.RMS); rms > 0 {
+		r.CrestFactor = math.Max(r.Left.Peak, r.Right.Peak) / rms
 	}
 	r.AudioHashQuantized = fmt.Sprintf("sha256:%x", h.Sum(nil))
 	window := bestWindow(w.Samples, 32768)
 	if len(window) >= 1024 {
-		r.DominantFrequencyHz, r.SpectralCentroidHz = spectrum(window, w.SampleRate)
+		r.DominantFrequencyHz, r.SpectralCentroidHz, r.THDDB, r.HarmonicsAbove40DB = spectrum(window, w.SampleRate)
 		r.TimeFrequencyHz = zeroCrossing(window, w.SampleRate)
 	}
 	return r, nil
@@ -133,7 +151,7 @@ func bestWindow(s [][2]float32, max int) []float64 {
 	}
 	return out
 }
-func spectrum(x []float64, rate int) (float64, float64) {
+func spectrum(x []float64, rate int) (frequency, centroid, thdDB float64, harmonics int) {
 	n := len(x)
 	z := make([]complex128, n)
 	for i, v := range x {
@@ -153,16 +171,42 @@ func spectrum(x []float64, rate int) (float64, float64) {
 		sum += p
 		weighted += p * float64(i) * float64(rate) / float64(n)
 	}
+	if maxMag == 0 {
+		return 0, 0, -300, 0
+	}
 	delta := 0.0
 	if maxI > 1 && maxI+1 < n/2 {
 		a, b, c := math.Log(cmplx.Abs(z[maxI-1])+1e-30), math.Log(cmplx.Abs(z[maxI])+1e-30), math.Log(cmplx.Abs(z[maxI+1])+1e-30)
 		delta = .5 * (a - c) / (a - 2*b + c)
 	}
-	centroid := 0.0
 	if sum > 0 {
 		centroid = weighted / sum
 	}
-	return (float64(maxI) + delta) * float64(rate) / float64(n), centroid
+	bandEnergy := func(center int) float64 {
+		energy := 0.0
+		for i := center - 2; i <= center+2; i++ {
+			if i > 0 && i < n/2 {
+				m := cmplx.Abs(z[i])
+				energy += m * m
+			}
+		}
+		return energy
+	}
+	fundamental := bandEnergy(maxI)
+	harmonicEnergy := 0.0
+	for harmonic := 2; harmonic <= 8 && harmonic*maxI < n/2; harmonic++ {
+		e := bandEnergy(harmonic * maxI)
+		harmonicEnergy += e
+		if fundamental > 0 && e/fundamental > 1e-4 {
+			harmonics++
+		}
+	}
+	thdDB = -300 // finite JSON representation of an effectively absent harmonic floor
+	if fundamental > 0 && harmonicEnergy > 0 {
+		thdDB = 10 * math.Log10(harmonicEnergy/fundamental)
+	}
+	frequency = (float64(maxI) + delta) * float64(rate) / float64(n)
+	return
 }
 func fft(a []complex128) {
 	n := len(a)
@@ -213,6 +257,9 @@ func WriteReport(path string, r Report) error {
 func pathDir(p string) string {
 	for i := len(p) - 1; i >= 0; i-- {
 		if p[i] == '/' {
+			if i == 0 {
+				return "/"
+			}
 			return p[:i]
 		}
 	}

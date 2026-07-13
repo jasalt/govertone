@@ -5,8 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"os/signal"
 	"runtime"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/example/letgo-sointu/internal/analysis"
@@ -177,7 +181,8 @@ func analyzeCommand(args []string) int {
 		b, _ := json.MarshalIndent(r, "", "  ")
 		fmt.Println(string(b))
 	}
-	if !r.Finite {
+	if !r.Finite || r.ClippedSamples != 0 {
+		fmt.Fprintf(os.Stderr, "audio validation failed: finite=%v clipped_samples=%d\n", r.Finite, r.ClippedSamples)
 		return 6
 	}
 	return 0
@@ -185,11 +190,16 @@ func analyzeCommand(args []string) int {
 func replCommand(args []string) int {
 	fs := flag.NewFlagSet("repl", flag.ContinueOnError)
 	noAudio, level, _ := common(fs)
+	tail := fs.Duration("tail", 2*time.Second, "shutdown release tail")
 	if fs.Parse(args) != nil {
 		return 2
 	}
 	if err := validateCommon(*level); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if *tail < 0 || *tail > 2*time.Second {
+		fmt.Fprintln(os.Stderr, "repl --tail must be between 0 and 2s")
 		return 2
 	}
 	a, err := app.New(os.Stdout, os.Stderr)
@@ -211,11 +221,32 @@ func replCommand(args []string) int {
 	} else {
 		fmt.Fprintln(os.Stderr, "audio disabled")
 	}
-	if err = a.Lisp.REPL(os.Stdin, os.Stdout); err != nil {
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	var interrupted atomic.Bool
+	go func() {
+		count := 0
+		for range signals {
+			count++
+			if count == 1 {
+				interrupted.Store(true)
+				_ = os.Stdin.Close() // unblock the form reader; shutdown runs below
+				continue
+			}
+			os.Exit(130) // a second signal forces immediate termination
+		}
+	}()
+	if err = a.Lisp.REPL(os.Stdin, os.Stdout); err != nil && !interrupted.Load() {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	_, _ = a.Lisp.Eval("(stop-all)")
+	if rt != nil && *tail > 0 {
+		time.Sleep(*tail)
+	}
+	stats := a.Engine.Stats(a.Allocator)
+	fmt.Fprintf(os.Stderr, "frames=%d queue_high_water=%d voices_high_water=%d underruns=%d late=%d dropped=%d max_render=%s\n", stats.FramesRendered, stats.MaxSchedulerDepth, stats.ActiveVoiceHighWater, stats.Underruns, stats.LateEvents, stats.DroppedEvents, stats.MaxRenderDuration)
 	return 0
 }
 func doctorCommand(args []string) int {
@@ -246,8 +277,8 @@ func doctorCommand(args []string) int {
 	}
 	w := &analysis.WAV{SampleRate: clock.SampleRate, Channels: 2, Format: 3, Bits: 32, Samples: buf}
 	r, err := analysis.Analyze(w)
-	if err != nil || !r.Finite || r.Left.Peak < .005 {
-		fmt.Printf("offline analysis: FAIL: peak=%g err=%v\n", r.Left.Peak, err)
+	if err != nil || !r.Finite || r.Left.Peak < .005 || math.Abs(r.DominantFrequencyHz-440) > 1 {
+		fmt.Printf("offline analysis: FAIL: peak=%g pitch=%g err=%v\n", r.Left.Peak, r.DominantFrequencyHz, err)
 		return 1
 	}
 	fmt.Printf("offline: ok (peak %.4f, pitch %.2f Hz)\n", r.Left.Peak, r.DominantFrequencyHz)

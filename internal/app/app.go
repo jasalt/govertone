@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/example/letgo-sointu/internal/audio"
 	"github.com/example/letgo-sointu/internal/clock"
@@ -19,6 +20,7 @@ type App struct {
 	Transport *clock.Transport
 	Engine    *audio.Engine
 	Lisp      *musiclisp.Runtime
+	closeOnce sync.Once
 }
 
 func New(out, errOut io.Writer) (*App, error) {
@@ -39,6 +41,11 @@ func New(out, errOut io.Writer) (*App, error) {
 		engine.Close()
 		return nil, fmt.Errorf("initialize let-go: %w", err)
 	}
-	return &App{p, reg, alloc, q, t, engine, runtime}, nil
+	return &App{Provider: p, Registry: reg, Allocator: alloc, Queue: q, Transport: t, Engine: engine, Lisp: runtime}, nil
 }
-func (a *App) Close() { a.Transport.Stop(); a.Engine.Close() }
+func (a *App) Close() {
+	a.closeOnce.Do(func() {
+		a.Transport.Stop()
+		a.Engine.Close()
+	})
+}

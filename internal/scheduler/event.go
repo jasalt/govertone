@@ -45,7 +45,7 @@ type TraceEvent struct {
 	ID             uint64 `json:"id"`
 	Kind           string `json:"kind"`
 	Instrument     string `json:"instrument,omitempty"`
-	Voice          int    `json:"voice,omitempty"`
+	Voice          int    `json:"voice"`
 	Note           uint8  `json:"note,omitempty"`
 	ScheduledFrame uint64 `json:"scheduled_frame"`
 	AppliedFrame   uint64 `json:"applied_frame"`

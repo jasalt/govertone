@@ -29,6 +29,7 @@ type Engine struct {
 	frame     atomic.Uint64
 	owners    [32]uint64
 	traceMu   sync.Mutex
+	closeOnce sync.Once
 	trace     []scheduler.TraceEvent
 	late      atomic.Uint64
 	dropped   atomic.Uint64
@@ -40,12 +41,14 @@ func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm f
 	if err != nil {
 		return nil, fmt.Errorf("initialize Sointu: %w", err)
 	}
-	return &Engine{synth: s, scheduler: q}, nil
+	return &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536)}, nil
 }
 func (e *Engine) Close() {
-	if e.synth != nil {
-		e.synth.Close()
-	}
+	e.closeOnce.Do(func() {
+		if e.synth != nil {
+			e.synth.Close()
+		}
+	})
 }
 func (e *Engine) Frame() clock.FrameIndex { return clock.FrameIndex(e.frame.Load()) }
 
@@ -137,7 +140,11 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 		}
 	}
 	e.traceMu.Lock()
-	e.trace = append(e.trace, scheduler.TraceEvent{ID: ev.ID, Kind: ev.Kind.String(), Instrument: string(ev.Instrument), Voice: int(ev.Voice), Note: ev.Note, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)})
+	if len(e.trace) < cap(e.trace) {
+		e.trace = append(e.trace, scheduler.TraceEvent{ID: ev.ID, Kind: ev.Kind.String(), Instrument: string(ev.Instrument), Voice: int(ev.Voice), Note: ev.Note, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)})
+	} else {
+		e.dropped.Add(1)
+	}
 	e.traceMu.Unlock()
 }
 func (e *Engine) Trace(block int) scheduler.Trace {

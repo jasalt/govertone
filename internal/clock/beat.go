@@ -19,10 +19,10 @@ func NewBeat(n, d int64) (Beat, error) {
 	if d == 0 {
 		return Beat{}, errors.New("beat denominator cannot be zero")
 	}
+	if n == math.MinInt64 || d == math.MinInt64 {
+		return Beat{}, errors.New("beat overflow")
+	}
 	if d < 0 {
-		if n == math.MinInt64 || d == math.MinInt64 {
-			return Beat{}, errors.New("beat overflow")
-		}
 		n, d = -n, -d
 	}
 	g := gcd(abs(n), d)

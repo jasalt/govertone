@@ -1,0 +1,26 @@
+name: acceptance
+on: [push, pull_request]
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.26.5'}
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev python3-numpy python3-scipy
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: make test-audio
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: audio-fixtures, path: out/fixtures/}
+  fedora-44:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - run: dnf install -y git golang gcc alsa-lib-devel pkgconf-pkg-config make python3 python3-numpy python3-scipy
+      - uses: actions/checkout@v4
+      - run: go test ./...
+      - run: make build doctor test-audio

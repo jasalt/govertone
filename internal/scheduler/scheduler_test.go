@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestCancellation(t *testing.T) {
+	q := New(4)
+	_, _ = q.Add(Event{Frame: 10, HandleID: 7})
+	_, _ = q.Add(Event{Frame: 20, HandleID: 7})
+	_, _ = q.Add(Event{Frame: 20, HandleID: 8})
+	if got := q.CancelHandle(7, 15); got != 1 {
+		t.Fatalf("removed %d", got)
+	}
+	if q.Len() != 2 {
+		t.Fatalf("queue length %d", q.Len())
+	}
+}
+
 func TestOrderingAndCapacity(t *testing.T) {
 	q := New(3)
 	a, _ := q.Add(Event{Frame: clock.FrameIndex(20)})

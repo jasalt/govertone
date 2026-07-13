@@ -36,6 +36,29 @@ func TestBindingsScheduleConcreteEvents(t *testing.T) {
 		}
 	}
 }
+func TestStopAllCancelsFutureNotes(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err = a.Lisp.Eval(`(play :sine :a4 {:at 4 :dur 1})`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(stop-all)`); err != nil {
+		t.Fatal(err)
+	}
+	buf, err := audio.RenderOffline(a.Engine, 120000, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, sample := range buf {
+		if sample != [2]float32{} {
+			t.Fatalf("cancelled future note produced audio at %d", i)
+		}
+	}
+}
+
 func TestBindingErrorsDoNotPoisonRuntime(t *testing.T) {
 	a, err := app.New(io.Discard, io.Discard)
 	if err != nil {

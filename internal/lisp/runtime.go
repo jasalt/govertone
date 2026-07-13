@@ -14,6 +14,7 @@ import (
 	"github.com/example/letgo-sointu/internal/instruments"
 	"github.com/example/letgo-sointu/internal/scheduler"
 	"github.com/nooga/let-go/pkg/api"
+	"github.com/nooga/let-go/pkg/rt"
 	"github.com/nooga/let-go/pkg/vm"
 )
 
@@ -33,6 +34,8 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 	if err != nil {
 		return nil, err
 	}
+	// music.core defines transport `now`, intentionally shadowing core/now.
+	rt.NS("music.core").Exclude("now")
 	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p}
 	defs := map[string]func([]vm.Value) (vm.Value, error){"play": r.play, "release": r.release, "at": r.at, "tempo": r.tempo, "now": r.now, "stop-all": r.stopAll, "instruments": r.instrumentsFn, "note-number": r.noteNumber}
 	for name, f := range defs {
@@ -222,6 +225,11 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 		return vm.NIL, err
 	}
 	if stolen != nil {
+		// Remove the stolen handle's later trigger/tail while retaining any
+		// action at this exact frame for deterministic same-frame ordering.
+		if uint64(startFrame) < math.MaxUint64 {
+			r.queue.CancelHandle(stolen.EventID, uint64(startFrame)+1)
+		}
 		if _, err = r.queue.Add(scheduler.Event{Frame: startFrame, Kind: scheduler.EventRelease, Instrument: stolen.Instrument, Voice: stolen.Voice, Note: stolen.Note, HandleID: stolen.EventID}); err != nil {
 			return vm.NIL, err
 		}
@@ -266,6 +274,11 @@ func (r *Runtime) release(args []vm.Value) (vm.Value, error) {
 	h, ok := r.allocator.Release(id, at)
 	if !ok {
 		return vm.FALSE, nil
+	}
+	r.queue.CancelHandle(id, at)
+	// A future reservation was cancelled before it could own a synth voice.
+	if h.StartFrame > at {
+		return vm.TRUE, nil
 	}
 	_, err = r.queue.Add(scheduler.Event{Frame: clock.FrameIndex(at), Kind: scheduler.EventRelease, Instrument: h.Instrument, Voice: h.Voice, Note: h.Note, HandleID: id})
 	if err != nil {
@@ -327,6 +340,10 @@ func (r *Runtime) stopAll(args []vm.Value) (vm.Value, error) {
 	at := uint64(r.engine.Frame())
 	hs := r.allocator.StopAll(at)
 	for _, h := range hs {
+		r.queue.CancelHandle(h.EventID, at)
+		if h.StartFrame > at {
+			continue
+		}
 		if _, err := r.queue.Add(scheduler.Event{Frame: clock.FrameIndex(at), Kind: scheduler.EventRelease, Instrument: h.Instrument, Voice: h.Voice, Note: h.Note, HandleID: h.EventID}); err != nil {
 			return vm.NIL, err
 		}

@@ -64,6 +64,26 @@ func (s *Scheduler) Pop() (Event, bool) {
 	}
 	return heap.Pop(&s.h).(Event), true
 }
+
+// CancelHandle removes queued trigger/release events for a note handle at or
+// after the given frame. It is control-side only and preserves heap ordering.
+func (s *Scheduler) CancelHandle(handleID uint64, at uint64) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.h[:0]
+	removed := 0
+	for _, event := range s.h {
+		if event.HandleID == handleID && uint64(event.Frame) >= at {
+			removed++
+			continue
+		}
+		kept = append(kept, event)
+	}
+	s.h = kept
+	heap.Init(&s.h)
+	return removed
+}
+
 func (s *Scheduler) Len() int { s.mu.Lock(); defer s.mu.Unlock(); return len(s.h) }
 func (s *Scheduler) Stats() (maxDepth int, overflows uint64) {
 	s.mu.Lock()
