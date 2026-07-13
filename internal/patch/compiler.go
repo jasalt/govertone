@@ -273,8 +273,10 @@ func normalizeParameter(schema ParameterSchema, v ParameterValue) (ParameterValu
 		case ParameterInteger:
 			n = v.Integer
 		case ParameterFloat:
-			if math.IsNaN(v.Float) || math.IsInf(v.Float, 0) || math.Trunc(v.Float) != v.Float {
-				return ParameterValue{}, fmt.Errorf("expected an exact integer")
+			maxInt := float64(int(^uint(0) >> 1))
+			minInt := -maxInt - 1
+			if math.IsNaN(v.Float) || math.IsInf(v.Float, 0) || math.Trunc(v.Float) != v.Float || v.Float < minInt || v.Float > maxInt {
+				return ParameterValue{}, fmt.Errorf("expected an exact in-range integer")
 			}
 			n = int(v.Float)
 		default:

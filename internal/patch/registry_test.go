@@ -47,6 +47,18 @@ func TestRegistryIdenticalElisionAndRollback(t *testing.T) {
 	if err = r.Commit(update); err != nil {
 		t.Fatal(err)
 	}
+	metadataOnly := spec
+	metadataOnly.Metadata.Doc = "updated documentation"
+	metadataUpdate, err := r.PrepareUpsert(metadataOnly)
+	if err != nil || metadataUpdate.Changed {
+		t.Fatalf("metadata update=%#v err=%v", metadataUpdate, err)
+	}
+	if err = r.Commit(metadataUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := r.Definition("a"); got.Metadata.Doc != "updated documentation" || r.Snapshot().Generation != 1 {
+		t.Fatalf("metadata was not committed without generation: %#v", got)
+	}
 	before := r.Snapshot()
 	bad := spec
 	bad.Units = []UnitSpec{mustUnit(t, "mulp", nil)}

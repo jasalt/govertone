@@ -143,6 +143,14 @@ func (r *Registry) Commit(update *PreparedRegistryUpdate) error {
 		return fmt.Errorf("stale patch generation: candidate based on %d, installed %d", update.BaseGeneration, r.generation)
 	}
 	if !update.Changed {
+		// Metadata-only changes do not require Synth.Update or a generation,
+		// but introspection should still reflect the latest source descriptor.
+		r.definitions = cloneDefinitions(update.Definitions)
+		r.order = append([]InstrumentID(nil), update.Order...)
+		if update.Compiled != nil {
+			r.compiled = cloneCompiled(update.Compiled)
+			r.compiled.Generation = r.generation
+		}
 		return nil
 	}
 	r.definitions = cloneDefinitions(update.Definitions)

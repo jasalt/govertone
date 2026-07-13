@@ -316,6 +316,16 @@ func (r *Runtime) instrumentFn(args []vm.Value) (vm.Value, error) {
 	if doc, ok := options["doc"].(vm.String); ok {
 		spec.Metadata.Doc = string(doc)
 	}
+	if tags, ok := options["tags"].(vm.Sequable); ok {
+		for sequence := tags.Seq(); sequence != nil && sequence != vm.EmptyList; sequence = sequence.Next() {
+			tag, err := keywordName(sequence.First(), "instrument tag")
+			if err != nil {
+				return vm.NIL, err
+			}
+			spec.Metadata.Tags = append(spec.Metadata.Tags, tag)
+		}
+		sort.Strings(spec.Metadata.Tags)
+	}
 	return instrumentToVM(spec), nil
 }
 func instrumentToVM(in patchmodel.InstrumentSpec) vm.Value {
@@ -323,7 +333,11 @@ func instrumentToVM(in patchmodel.InstrumentSpec) vm.Value {
 	for i, u := range in.Units {
 		units[i] = unitToVM(u)
 	}
-	return mapOf(vm.Keyword("music/type"), vm.Keyword("instrument"), vm.Keyword("id"), vm.Keyword(in.ID), vm.Keyword("voices"), vm.Int(in.Voices), vm.Keyword("doc"), vm.String(in.Metadata.Doc), vm.Keyword("units"), vm.NewPersistentVector(units))
+	tags := make([]vm.Value, len(in.Metadata.Tags))
+	for i, tag := range in.Metadata.Tags {
+		tags[i] = vm.Keyword(tag)
+	}
+	return mapOf(vm.Keyword("music/type"), vm.Keyword("instrument"), vm.Keyword("id"), vm.Keyword(in.ID), vm.Keyword("voices"), vm.Int(in.Voices), vm.Keyword("doc"), vm.String(in.Metadata.Doc), vm.Keyword("tags"), vm.NewPersistentVector(tags), vm.Keyword("units"), vm.NewPersistentVector(units))
 }
 func instrumentFromVM(v vm.Value) (patchmodel.InstrumentSpec, error) {
 	entries, err := mapEntries(v)
@@ -353,6 +367,15 @@ func instrumentFromVM(v vm.Value) (patchmodel.InstrumentSpec, error) {
 	in, err := patchmodel.NewInstrument(patchmodel.InstrumentID(id), int(voices), units...)
 	if doc, ok := entries["doc"].(vm.String); ok {
 		in.Metadata.Doc = string(doc)
+	}
+	if tags, ok := entries["tags"].(vm.Sequable); ok {
+		for sequence := tags.Seq(); sequence != nil && sequence != vm.EmptyList; sequence = sequence.Next() {
+			tag, tagErr := keywordName(sequence.First(), "instrument tag")
+			if tagErr != nil {
+				return patchmodel.InstrumentSpec{}, tagErr
+			}
+			in.Metadata.Tags = append(in.Metadata.Tags, tag)
+		}
 	}
 	return in, err
 }
@@ -472,6 +495,9 @@ func layoutToVM(layout patchmodel.InstrumentLayout) vm.Value {
 
 func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate) (patchmodel.PatchGeneration, bool, error) {
 	if !update.Changed {
+		if err := r.patchRegistry.Commit(update); err != nil {
+			return update.BaseGeneration, false, err
+		}
 		return update.BaseGeneration, false, nil
 	}
 	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed)
