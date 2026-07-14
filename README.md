@@ -41,6 +41,8 @@ make acceptance
 music.core=> (play :sine :a4 {:dur 1})
 ```
 
+*PRO TIP: append `rlwrap` in front of the lgs repl startup command for better typing ergonomics.*
+
 Durations and `:at` positions are measured in beats. Use `./out/lgs repl --no-audio` in a headless environment. Lisp evaluation and patch compilation never occur on the audio callback.
 
 Define and play a synth interactively:
