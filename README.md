@@ -2,6 +2,8 @@
 
 `lgs` is an interactive music environment embedding the [let-go](https://github.com/nooga/let-go) Lisp runtime and the pure-Go [Sointu](https://github.com/vsariola/sointu) VM. It provides exact beat scheduling, deterministic offline float WAV rendering, real-time stereo output through Oto/ALSA/PipeWire, automatic audio analysis, and a transactional `defsynth` patch DSL.
 
+[Demo-2026-07-14-23-28-37.webm](https://github.com/user-attachments/assets/c0084d98-901b-41b5-b279-9e42dfad1e3b)
+
 ## Background
 
 Experimental project generated with `gpt-5.6-sol` (high) for learning something about:
