@@ -47,15 +47,26 @@ Define and play a synth interactively:
 
 ```clojure
 (defsynth bell {:voices 4}
-  (envelope {:attack 4 :decay 40 :sustain 80 :release 55})
+  ;; A struck fundamental plus two shorter-lived metallic partials.
+  (envelope {:attack 4 :decay 82 :sustain 0 :release 70})
   (oscillator {:type :sine})
   (mulp)
-  (out {:gain 78}))
+  (envelope {:attack 4 :decay 74 :sustain 0 :release 68 :gain 104})
+  (oscillator {:type :sine :transpose 79 :detune 74 :gain 104})
+  (mulp)
+  (addp)
+  (envelope {:attack 4 :decay 78 :sustain 0 :release 68 :gain 90})
+  (oscillator {:type :sine :transpose 83 :gain 90})
+  (mulp)
+  (addp)
+  (out {:gain 64}))
 
 (play bell :c5 {:dur 2})
 (synth-info :bell)
 (patch-generation)
 ```
+
+The zero-sustain envelopes make this a struck, decaying sound even while the note is held; the transposed oscillators supply metallic partials rather than a plain sine. The same renderable example is in `testdata/programs/bell.lg`.
 
 Reevaluating the same `defsynth` with changed units transactionally updates Sointu while preserving `:bell`. An invalid redefinition leaves the previous synth and generation active. See [docs/patch-dsl.md](docs/patch-dsl.md).
 

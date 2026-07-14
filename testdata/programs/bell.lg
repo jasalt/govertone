@@ -1,0 +1,15 @@
+(defsynth bell {:voices 4}
+  (envelope {:attack 4 :decay 82 :sustain 0 :release 70})
+  (oscillator {:type :sine})
+  (mulp)
+  (envelope {:attack 4 :decay 74 :sustain 0 :release 68 :gain 104})
+  (oscillator {:type :sine :transpose 79 :detune 74 :gain 104})
+  (mulp)
+  (addp)
+  (envelope {:attack 4 :decay 78 :sustain 0 :release 68 :gain 90})
+  (oscillator {:type :sine :transpose 83 :gain 90})
+  (mulp)
+  (addp)
+  (out {:gain 64}))
+
+(play bell :c5 {:dur 2})

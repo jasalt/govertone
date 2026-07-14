@@ -19,6 +19,20 @@ const sineDefinition = `(defsynth dynamic-tone {:voices 4}
   (mulp)
   (out {:gain 80}))`
 
+const bellDefinition = `(defsynth bell {:voices 4}
+  (envelope {:attack 4 :decay 82 :sustain 0 :release 70})
+  (oscillator {:type :sine})
+  (mulp)
+  (envelope {:attack 4 :decay 74 :sustain 0 :release 68 :gain 104})
+  (oscillator {:type :sine :transpose 79 :detune 74 :gain 104})
+  (mulp)
+  (addp)
+  (envelope {:attack 4 :decay 78 :sustain 0 :release 68 :gain 90})
+  (oscillator {:type :sine :transpose 83 :gain 90})
+  (mulp)
+  (addp)
+  (out {:gain 64}))`
+
 func TestLowLevelPatchAPIAndStructuredValidation(t *testing.T) {
 	a, err := app.New(io.Discard, io.Discard)
 	if err != nil {
@@ -88,6 +102,48 @@ func TestDefsynthDynamicSineAndElision(t *testing.T) {
 		t.Fatalf("dynamic sine report=%#v err=%v", report, err)
 	}
 }
+func TestBellExampleHasPartialsAndPercussiveDecay(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err = a.Lisp.Eval(bellDefinition); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(play bell :c5 {:dur 2})`); err != nil {
+		t.Fatal(err)
+	}
+	buf, err := audio.RenderOffline(a.Engine, 2*clock.SampleRate, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := analysis.Analyze(&analysis.WAV{SampleRate: clock.SampleRate, Channels: 2, Format: 3, Bits: 32, Samples: buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Finite || report.ClippedSamples != 0 || report.Left.Peak < .1 || report.Left.Peak > .9 {
+		t.Fatalf("unsafe bell level: %#v", report)
+	}
+	if math.Abs(report.DominantFrequencyHz-523.25) > 2 || report.THDDB < -20 || report.SpectralCentroidHz < 575 {
+		t.Fatalf("bell spectrum lacks its fundamental or metallic partials: %#v", report)
+	}
+	early := rms(buf[0 : clock.SampleRate/10])
+	late := rms(buf[3*clock.SampleRate/4 : 9*clock.SampleRate/10])
+	if early < late*5 {
+		t.Fatalf("bell is not percussive: early RMS=%g late RMS=%g", early, late)
+	}
+}
+
+func rms(buf [][2]float32) float64 {
+	var energy float64
+	for _, frame := range buf {
+		x := float64(frame[0])
+		energy += x * x
+	}
+	return math.Sqrt(energy / float64(len(buf)))
+}
+
 func TestInvalidRedefinitionRollsBack(t *testing.T) {
 	a, err := app.New(io.Discard, io.Discard)
 	if err != nil {
