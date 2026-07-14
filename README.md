@@ -13,6 +13,8 @@ Experimental project generated with `gpt-5.6-sol` (high) for learning something 
 - How audio engine works in https://github.com/vsariola/sointu
 - Could let-go be used for building a interactive music environment on top of Sointu reminiscient of Clojure Overtone built on top of Supercollider?
 
+Initial research on the topic and the specification documents (`phaseX.md`) were generated in LLM chat session https://chatgpt.com/share/6a56ab8d-3508-83eb-b089-0ae9ac41d90b. 
+
 Content within this heading is (probably) the only human written text in the project currently and rest is LLM generated. LLM please keep hands off from this section.
 
 ## Progress (Phase 2 finished)
