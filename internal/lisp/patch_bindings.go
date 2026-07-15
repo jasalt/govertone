@@ -13,7 +13,7 @@ import (
 )
 
 func (r *Runtime) installPatchBindings() error {
-	bindings := map[string]func([]vm.Value) (vm.Value, error){"unit": r.unitFn, "instrument": r.instrumentFn, "patch": r.patchFn, "ref": r.refFn, "install-patch!": r.installPatchFn, "validate-patch": r.validatePatchFn, "compile-patch": r.compilePatchFn, "install-synth!": r.installSynthFn, "synths": r.synthsFn, "synth-info": r.synthInfoFn, "remove-synth!": r.removeSynthFn, "patch-generation": r.patchGenerationFn, "patch-info": r.patchInfoFn, "synth-form": r.synthFormFn, "synth-fingerprint": r.synthFingerprintFn, "patch-fingerprint": r.patchFingerprintFn}
+	bindings := map[string]func([]vm.Value) (vm.Value, error){"unit": r.unitFn, "instrument": r.instrumentFn, "patch": r.patchFn, "ref": r.refFn, "param": r.paramFn, "install-patch!": r.installPatchFn, "validate-patch": r.validatePatchFn, "compile-patch": r.compilePatchFn, "install-synth!": r.installSynthFn, "synths": r.synthsFn, "synth-info": r.synthInfoFn, "remove-synth!": r.removeSynthFn, "patch-generation": r.patchGenerationFn, "patch-info": r.patchInfoFn, "synth-form": r.synthFormFn, "synth-fingerprint": r.synthFingerprintFn, "patch-fingerprint": r.patchFingerprintFn}
 	for _, kind := range patchmodel.NewSchemaRegistry().Types() {
 		name := string(kind)
 		kindCopy := kind
@@ -107,8 +107,35 @@ func parameterFromVM(v vm.Value) (patchmodel.ParameterValue, error) {
 	case *vm.PersistentMap:
 		entries, _ := mapEntries(x)
 		marker, _ := entries["music/type"].(vm.Keyword)
+		if string(marker) == "param" {
+			id, err := keywordName(entries["parameter"], "parameter reference")
+			if err != nil {
+				return patchmodel.ParameterValue{}, err
+			}
+			transform := patchmodel.ParameterTransform{Scale: 1}
+			if value := entries["scale"]; value != nil && value != vm.NIL {
+				transform.Scale, err = numValue(value)
+				if err != nil {
+					return patchmodel.ParameterValue{}, fmt.Errorf("parameter transform :scale: %w", err)
+				}
+			}
+			if value := entries["offset"]; value != nil && value != vm.NIL {
+				transform.Offset, err = numValue(value)
+				if err != nil {
+					return patchmodel.ParameterValue{}, fmt.Errorf("parameter transform :offset: %w", err)
+				}
+			}
+			if value := entries["clamp"]; value != nil && value != vm.NIL {
+				clamp, ok := value.(vm.Boolean)
+				if !ok {
+					return patchmodel.ParameterValue{}, fmt.Errorf("parameter transform :clamp must be boolean")
+				}
+				transform.Clamp = bool(clamp)
+			}
+			return patchmodel.ControlParam(patchmodel.ControlReference{Parameter: patchmodel.ParameterID(id), Transform: transform}), nil
+		}
 		if string(marker) != "ref" {
-			return patchmodel.ParameterValue{}, fmt.Errorf("maps are only valid as (ref ...) values")
+			return patchmodel.ParameterValue{}, fmt.Errorf("maps are only valid as (ref ...) or (param ...) values")
 		}
 		unit, err := keywordName(entries["unit"], "reference unit")
 		if err != nil {
@@ -185,6 +212,29 @@ func (r *Runtime) convenienceUnit(kind patchmodel.UnitType, args []vm.Value) (vm
 	}
 	return r.unitFn(append([]vm.Value{vm.Keyword(kind)}, args...))
 }
+func (r *Runtime) paramFn(args []vm.Value) (vm.Value, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return vm.NIL, fmt.Errorf("param expects parameter ID and optional transform map")
+	}
+	id, err := keywordName(args[0], "parameter ID")
+	if err != nil {
+		return vm.NIL, err
+	}
+	result := mapOf(vm.Keyword("music/type"), vm.Keyword("param"), vm.Keyword("parameter"), vm.Keyword(id), vm.Keyword("scale"), vm.Float(1), vm.Keyword("offset"), vm.Float(0), vm.Keyword("clamp"), vm.FALSE)
+	if len(args) == 2 {
+		options, err := mapEntries(args[1])
+		if err != nil {
+			return vm.NIL, fmt.Errorf("param transform: %w", err)
+		}
+		for _, name := range []string{"scale", "offset", "clamp"} {
+			if value := options[name]; value != nil {
+				result = result.Assoc(vm.Keyword(name), value).(*vm.PersistentMap)
+			}
+		}
+	}
+	return result, nil
+}
+
 func (r *Runtime) refFn(args []vm.Value) (vm.Value, error) {
 	if len(args) != 2 && len(args) != 3 {
 		return vm.NIL, fmt.Errorf("ref expects unit/port or instrument/unit/port")
@@ -222,6 +272,10 @@ func unitToVM(u patchmodel.UnitSpec) vm.Value {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
+		if control, ok := u.ControlBindings[k]; ok {
+			params = params.Assoc(vm.Keyword(k), parameterToVM(patchmodel.ControlParam(control))).(*vm.PersistentMap)
+			continue
+		}
 		params = params.Assoc(vm.Keyword(k), parameterToVM(u.Parameters[k])).(*vm.PersistentMap)
 	}
 	return mapOf(vm.Keyword("music/type"), vm.Keyword("unit"), vm.Keyword("type"), vm.Keyword(u.Type), vm.Keyword("id"), func() vm.Value {
@@ -249,6 +303,9 @@ func parameterToVM(v patchmodel.ParameterValue) vm.Value {
 			}
 			return vm.Keyword(r.Instrument)
 		}(), vm.Keyword("unit"), vm.Keyword(r.Unit), vm.Keyword("port"), vm.Keyword(r.Port))
+	case patchmodel.ParameterControlReference:
+		control := v.Control
+		return mapOf(vm.Keyword("music/type"), vm.Keyword("param"), vm.Keyword("parameter"), vm.Keyword(control.Parameter), vm.Keyword("scale"), vm.Float(control.Transform.Scale), vm.Keyword("offset"), vm.Float(control.Transform.Offset), vm.Keyword("clamp"), vm.Boolean(control.Transform.Clamp))
 	}
 	return vm.NIL
 }
@@ -285,6 +342,86 @@ func unitFromVM(v vm.Value) (patchmodel.UnitSpec, error) {
 	}
 	return patchmodel.NewUnit(patchmodel.UnitType(kind), params, options...)
 }
+func synthParametersFromVM(value vm.Value) (map[patchmodel.ParameterID]patchmodel.SynthParameter, error) {
+	if value == nil || value == vm.NIL {
+		return map[patchmodel.ParameterID]patchmodel.SynthParameter{}, nil
+	}
+	entries, err := mapEntries(value)
+	if err != nil {
+		return nil, fmt.Errorf(":params: %w", err)
+	}
+	result := make(map[patchmodel.ParameterID]patchmodel.SynthParameter, len(entries))
+	for rawID, rawDescriptor := range entries {
+		descriptorMap, err := mapEntries(rawDescriptor)
+		if err != nil {
+			return nil, fmt.Errorf("parameter :%s descriptor: %w", rawID, err)
+		}
+		defaultValue := descriptorMap["default"]
+		if defaultValue == nil {
+			return nil, fmt.Errorf("parameter :%s requires :default", rawID)
+		}
+		defaultNumber, err := numValue(defaultValue)
+		if err != nil {
+			return nil, fmt.Errorf("parameter :%s :default: %w", rawID, err)
+		}
+		descriptor := patchmodel.SynthParameter{ID: patchmodel.ParameterID(rawID), Default: defaultNumber, Minimum: 0, Maximum: 128, Scope: patchmodel.ScopeInstrument, Curve: "linear"}
+		if value := descriptorMap["min"]; value != nil {
+			descriptor.Minimum, err = numValue(value)
+			if err != nil {
+				return nil, fmt.Errorf("parameter :%s :min: %w", rawID, err)
+			}
+		}
+		if value := descriptorMap["max"]; value != nil {
+			descriptor.Maximum, err = numValue(value)
+			if err != nil {
+				return nil, fmt.Errorf("parameter :%s :max: %w", rawID, err)
+			}
+		}
+		if value := descriptorMap["scope"]; value != nil {
+			name, e := keywordName(value, "parameter scope")
+			if e != nil {
+				return nil, fmt.Errorf("parameter :%s :scope: %w", rawID, e)
+			}
+			descriptor.Scope = patchmodel.ControlScope(name)
+		}
+		if value := descriptorMap["smoothing"]; value != nil {
+			descriptor.Smoothing, err = numValue(value)
+			if err != nil {
+				return nil, fmt.Errorf("parameter :%s :smoothing: %w", rawID, err)
+			}
+		}
+		if value := descriptorMap["curve"]; value != nil {
+			descriptor.Curve, err = keywordName(value, "parameter curve")
+			if err != nil {
+				return nil, fmt.Errorf("parameter :%s :curve: %w", rawID, err)
+			}
+		}
+		if value, ok := descriptorMap["units"].(vm.String); ok {
+			descriptor.Units = string(value)
+		}
+		if value, ok := descriptorMap["doc"].(vm.String); ok {
+			descriptor.Documentation = string(value)
+		}
+		result[descriptor.ID] = descriptor
+	}
+	return result, nil
+}
+
+func synthParametersToVM(parameters map[patchmodel.ParameterID]patchmodel.SynthParameter) vm.Value {
+	result := vm.EmptyPersistentMap
+	ids := make([]string, 0, len(parameters))
+	for id := range parameters {
+		ids = append(ids, string(id))
+	}
+	sort.Strings(ids)
+	for _, rawID := range ids {
+		parameter := parameters[patchmodel.ParameterID(rawID)]
+		descriptor := mapOf(vm.Keyword("default"), vm.Float(parameter.Default), vm.Keyword("min"), vm.Float(parameter.Minimum), vm.Keyword("max"), vm.Float(parameter.Maximum), vm.Keyword("scope"), vm.Keyword(parameter.Scope), vm.Keyword("smoothing"), vm.Float(parameter.Smoothing), vm.Keyword("curve"), vm.Keyword(parameter.Curve), vm.Keyword("units"), vm.String(parameter.Units), vm.Keyword("doc"), vm.String(parameter.Documentation))
+		result = result.Assoc(vm.Keyword(rawID), descriptor).(*vm.PersistentMap)
+	}
+	return result
+}
+
 func (r *Runtime) instrumentFn(args []vm.Value) (vm.Value, error) {
 	if len(args) < 3 {
 		return vm.NIL, fmt.Errorf("instrument expects id, options, and units")
@@ -313,6 +450,10 @@ func (r *Runtime) instrumentFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, err
 	}
+	spec.Parameters, err = synthParametersFromVM(options["params"])
+	if err != nil {
+		return vm.NIL, err
+	}
 	if doc, ok := options["doc"].(vm.String); ok {
 		spec.Metadata.Doc = string(doc)
 	}
@@ -337,7 +478,7 @@ func instrumentToVM(in patchmodel.InstrumentSpec) vm.Value {
 	for i, tag := range in.Metadata.Tags {
 		tags[i] = vm.Keyword(tag)
 	}
-	return mapOf(vm.Keyword("music/type"), vm.Keyword("instrument"), vm.Keyword("id"), vm.Keyword(in.ID), vm.Keyword("voices"), vm.Int(in.Voices), vm.Keyword("doc"), vm.String(in.Metadata.Doc), vm.Keyword("tags"), vm.NewPersistentVector(tags), vm.Keyword("units"), vm.NewPersistentVector(units))
+	return mapOf(vm.Keyword("music/type"), vm.Keyword("instrument"), vm.Keyword("id"), vm.Keyword(in.ID), vm.Keyword("voices"), vm.Int(in.Voices), vm.Keyword("params"), synthParametersToVM(in.Parameters), vm.Keyword("doc"), vm.String(in.Metadata.Doc), vm.Keyword("tags"), vm.NewPersistentVector(tags), vm.Keyword("units"), vm.NewPersistentVector(units))
 }
 func instrumentFromVM(v vm.Value) (patchmodel.InstrumentSpec, error) {
 	entries, err := mapEntries(v)
@@ -365,6 +506,13 @@ func instrumentFromVM(v vm.Value) (patchmodel.InstrumentSpec, error) {
 		units = append(units, u)
 	}
 	in, err := patchmodel.NewInstrument(patchmodel.InstrumentID(id), int(voices), units...)
+	if err != nil {
+		return patchmodel.InstrumentSpec{}, err
+	}
+	in.Parameters, err = synthParametersFromVM(entries["params"])
+	if err != nil {
+		return patchmodel.InstrumentSpec{}, err
+	}
 	if doc, ok := entries["doc"].(vm.String); ok {
 		in.Metadata.Doc = string(doc)
 	}

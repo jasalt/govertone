@@ -65,6 +65,7 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 		return PatchUpdateResult{}, fmt.Errorf("Sointu patch update failed: %w", err)
 	}
 	e.layout = make(map[patchmodel.InstrumentID]instruments.Definition, len(compiled.Layout.Instruments))
+	e.controls = newControlState(compiled)
 	for id, instrument := range compiled.Layout.Instruments {
 		e.layout[id] = instruments.Definition{ID: id, FirstVoice: instruments.VoiceID(instrument.FirstVoice), Voices: instrument.NumVoices}
 	}

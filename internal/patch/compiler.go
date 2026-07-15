@@ -137,6 +137,28 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 		return nil, err
 	}
 	result.Fingerprint = fp
+	bytecode, err := sointuvm.NewBytecode(result.Patch, sointuvm.AllFeatures{}, 120)
+	if err != nil {
+		return nil, &CompileError{[]Diagnostic{diag("patch-compile-failed", "", 0, "", "", fmt.Sprintf("Sointu rejected patch: %v", err))}}
+	}
+	for instrumentIndex, instrument := range normalized.Instruments {
+		for unitIndex, unit := range instrument.Units {
+			names := make([]string, 0, len(unit.ControlBindings))
+			for name := range unit.ControlBindings {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				reference := unit.ControlBindings[name]
+				descriptor := instrument.Parameters[reference.Parameter]
+				operand, ok := bytecode.ParameterOperands[sointuvm.ParameterAddress{Instrument: instrumentIndex, Unit: unitIndex, Parameter: name}]
+				if !ok {
+					return nil, &CompileError{[]Diagnostic{diag("control-binding-missing", instrument.ID, unitIndex, unit.ID, name, "Sointu control operand was not generated")}}
+				}
+				result.Bindings = append(result.Bindings, ControlBinding{Index: len(result.Bindings), InstrumentID: instrument.ID, ParameterID: reference.Parameter, UnitID: unit.ID, UnitIndex: unitIndex, UnitParameter: name, Operand: operand, Scope: descriptor.Scope, Minimum: descriptor.Minimum, Maximum: descriptor.Maximum, Default: descriptor.Default, Transform: reference.Transform})
+			}
+		}
+	}
 	// Force Sointu bytecode construction before the candidate reaches audio.
 	synth, err := (sointuvm.GoSynther{}).Synth(result.Patch, 120)
 	if err != nil {
@@ -167,7 +189,43 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 		if len(raw.Metadata.Doc) > 64*1024 {
 			diagnostics = append(diagnostics, diag("metadata-limit-exceeded", id, 0, "", "", fmt.Sprintf("Synth :%s documentation exceeds 64 KiB", id)))
 		}
-		in := InstrumentSpec{ID: id, Voices: raw.Voices, Metadata: raw.Metadata, Units: make([]UnitSpec, 0, len(raw.Units))}
+		in := InstrumentSpec{ID: id, Voices: raw.Voices, Parameters: map[ParameterID]SynthParameter{}, Metadata: raw.Metadata, Units: make([]UnitSpec, 0, len(raw.Units))}
+		for rawID, descriptor := range raw.Parameters {
+			parameterID := ParameterID(normalizeName(string(rawID)))
+			if err := validateID("parameter ID", string(parameterID)); err != nil {
+				diagnostics = append(diagnostics, diag("invalid-parameter-id", id, -1, "", string(rawID), err.Error()))
+				continue
+			}
+			descriptor.ID = parameterID
+			if math.IsNaN(descriptor.Default) || math.IsInf(descriptor.Default, 0) || math.IsNaN(descriptor.Minimum) || math.IsInf(descriptor.Minimum, 0) || math.IsNaN(descriptor.Maximum) || math.IsInf(descriptor.Maximum, 0) {
+				diagnostics = append(diagnostics, diag("invalid-control-value", id, -1, "", string(parameterID), fmt.Sprintf("Synth :%s parameter :%s values must be finite", id, parameterID)))
+				continue
+			}
+			if descriptor.Minimum >= descriptor.Maximum || descriptor.Default < descriptor.Minimum || descriptor.Default > descriptor.Maximum {
+				diagnostics = append(diagnostics, diag("control-out-of-range", id, -1, "", string(parameterID), fmt.Sprintf("Synth :%s parameter :%s requires min < max and default within that range", id, parameterID)))
+				continue
+			}
+			if descriptor.Scope == "" {
+				descriptor.Scope = ScopeInstrument
+			}
+			if descriptor.Scope != ScopeInstrument && descriptor.Scope != ScopeVoice {
+				diagnostics = append(diagnostics, diag("invalid-control-scope", id, -1, "", string(parameterID), fmt.Sprintf("Synth :%s parameter :%s has invalid scope :%s", id, parameterID, descriptor.Scope)))
+				continue
+			}
+			if descriptor.Smoothing < 0 || math.IsNaN(descriptor.Smoothing) || math.IsInf(descriptor.Smoothing, 0) {
+				diagnostics = append(diagnostics, diag("invalid-control-smoothing", id, -1, "", string(parameterID), "control smoothing must be finite and nonnegative"))
+				continue
+			}
+			if descriptor.Curve == "" {
+				descriptor.Curve = "linear"
+			}
+			if descriptor.Curve != "linear" && descriptor.Curve != "exponential" {
+				diagnostics = append(diagnostics, diag("invalid-control-curve", id, -1, "", string(parameterID), fmt.Sprintf("unsupported parameter curve :%s", descriptor.Curve)))
+				continue
+			}
+			in.Parameters[parameterID] = descriptor
+		}
+		usedParameters := map[ParameterID]bool{}
 		unitSeen := map[UnitID]bool{}
 		for index, rawUnit := range raw.Units {
 			schema, ok := c.Schemas.Schema(rawUnit.Type)
@@ -180,7 +238,7 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 				diagnostics = append(diagnostics, diag("unknown-unit-type", id, index, rawUnit.ID, "", message))
 				continue
 			}
-			u := UnitSpec{Type: schema.Type, Disabled: rawUnit.Disabled, Metadata: rawUnit.Metadata, Parameters: ParameterMap{}}
+			u := UnitSpec{Type: schema.Type, Disabled: rawUnit.Disabled, Metadata: rawUnit.Metadata, Parameters: ParameterMap{}, ControlBindings: map[string]ControlReference{}}
 			if rawUnit.ExplicitID {
 				uid, e := NormalizeUnitID(rawUnit.ID)
 				if e != nil {
@@ -217,6 +275,31 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 					continue
 				}
 				provided[name] = true
+				if value.Kind == ParameterControlReference {
+					if value.Control == nil {
+						diagnostics = append(diagnostics, diag("unknown-control", id, index, u.ID, name, contextMessage(id, index, u, name, "invalid control reference")))
+						continue
+					}
+					descriptor, exists := in.Parameters[value.Control.Parameter]
+					if !exists {
+						diagnostics = append(diagnostics, diag("unknown-control", id, index, u.ID, name, contextMessage(id, index, u, name, fmt.Sprintf("parameter :%s is not declared", value.Control.Parameter))))
+						continue
+					}
+					usedParameters[value.Control.Parameter] = true
+					if !controllableParameter(schema.Type, name) {
+						diagnostics = append(diagnostics, diag("control-binding-missing", id, index, u.ID, name, contextMessage(id, index, u, name, "target is not externally controllable")))
+						continue
+					}
+					transform := value.Control.Transform
+					if math.IsNaN(transform.Scale) || math.IsInf(transform.Scale, 0) || math.IsNaN(transform.Offset) || math.IsInf(transform.Offset, 0) {
+						diagnostics = append(diagnostics, diag("invalid-control-value", id, index, u.ID, name, contextMessage(id, index, u, name, "control transform must be finite")))
+						continue
+					}
+					mapped := descriptor.Default*transform.Scale + transform.Offset
+					control := *value.Control
+					value = FloatParam(math.Round(mapped))
+					u.ControlBindings[name] = control
+				}
 				normalized, e := normalizeParameter(schema.Parameters[name], value)
 				if e != nil {
 					code := DiagnosticCode("invalid-parameter-type")
@@ -245,6 +328,11 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 			}
 			normalizeVirtualParameters(&u)
 			in.Units = append(in.Units, u)
+		}
+		for parameterID := range in.Parameters {
+			if !usedParameters[parameterID] {
+				diagnostics = append(diagnostics, Diagnostic{Severity: SeverityWarning, Code: "unused-control", Instrument: id, UnitIndex: -1, Parameter: string(parameterID), Message: fmt.Sprintf("Synth :%s declares parameter :%s, but no unit references it", id, parameterID)})
+			}
 		}
 		out.Instruments = append(out.Instruments, in)
 	}
@@ -398,6 +486,15 @@ func modulationPort(unitType, port string) (int, bool) {
 	}
 	return 0, false
 }
+func controllableParameter(unitType UnitType, name string) bool {
+	for _, parameter := range sointu.UnitTypes[string(unitType)] {
+		if parameter.Name == name {
+			return parameter.CanSet && parameter.CanModulate
+		}
+	}
+	return false
+}
+
 func hasErrors(ds []Diagnostic) bool {
 	for _, d := range ds {
 		if d.Severity == SeverityError {

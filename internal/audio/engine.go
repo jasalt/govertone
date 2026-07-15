@@ -8,6 +8,7 @@ import (
 
 	"github.com/example/letgo-sointu/internal/clock"
 	"github.com/example/letgo-sointu/internal/instruments"
+	patchmodel "github.com/example/letgo-sointu/internal/patch"
 	"github.com/example/letgo-sointu/internal/scheduler"
 	"github.com/vsariola/sointu"
 	sointuvm "github.com/vsariola/sointu/vm"
@@ -41,6 +42,7 @@ type Engine struct {
 	late             atomic.Uint64
 	dropped          atomic.Uint64
 	maxRender        atomic.Int64
+	controls         *controlState
 }
 
 func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm float64) (*Engine, error) {
@@ -48,7 +50,13 @@ func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm f
 	if err != nil {
 		return nil, fmt.Errorf("initialize Sointu: %w", err)
 	}
-	e := &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}}
+	var compiled *patchmodel.CompiledPatch
+	if source, ok := provider.(interface {
+		Compiled() *patchmodel.CompiledPatch
+	}); ok {
+		compiled = source.Compiled()
+	}
+	e := &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}, controls: newControlState(compiled)}
 	for _, definition := range provider.Instruments() {
 		e.layout[definition.ID] = definition
 	}
@@ -149,6 +157,10 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 	}
 	switch ev.Kind {
 	case scheduler.EventTrigger:
+		if controlled, ok := e.synth.(controlledSynth); ok {
+			controlled.ClearVoiceControls(voice)
+			delete(e.controls.voiceValue, voice)
+		}
 		// Sointu's tracker note convention is one octave above MIDI (its 81
 		// is concert A4). Keep the public API in MIDI and translate here.
 		e.synth.Trigger(voice, ev.Note+12)
