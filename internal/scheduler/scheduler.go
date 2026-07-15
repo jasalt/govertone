@@ -13,8 +13,30 @@ func (h eventHeap) Less(i, j int) bool {
 	if h[i].Frame != h[j].Frame {
 		return h[i].Frame < h[j].Frame
 	}
+	left, right := eventPriority(h[i]), eventPriority(h[j])
+	if left != right {
+		return left < right
+	}
 	return h[i].Sequence < h[j].Sequence
 }
+func eventPriority(event Event) int {
+	switch event.Kind {
+	case EventRelease:
+		return 0
+	case EventSetControl:
+		if event.HandleID == 0 {
+			return 1
+		}
+		return 3
+	case EventTrigger:
+		return 2
+	case EventStopAll:
+		return 4
+	default:
+		return 2
+	}
+}
+
 func (h eventHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 func (h *eventHeap) Push(x any)   { *h = append(*h, x.(Event)) }
 func (h *eventHeap) Pop() any     { old := *h; n := len(old); x := old[n-1]; *h = old[:n-1]; return x }

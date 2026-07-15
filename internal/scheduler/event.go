@@ -12,6 +12,7 @@ const (
 	EventRelease
 	EventSetTempo
 	EventStopAll
+	EventSetControl
 )
 
 func (k EventKind) String() string {
@@ -24,6 +25,8 @@ func (k EventKind) String() string {
 		return "tempo"
 	case EventStopAll:
 		return "stop-all"
+	case EventSetControl:
+		return "set-control"
 	default:
 		return "unknown"
 	}
@@ -41,16 +44,22 @@ type Event struct {
 	Note        uint8
 	Tempo       float64
 	HandleID    uint64
+	Parameter   string
+	Value       float64
+	Reset       bool
 }
 
 type TraceEvent struct {
-	ID             uint64 `json:"id"`
-	Kind           string `json:"kind"`
-	Instrument     string `json:"instrument,omitempty"`
-	Voice          int    `json:"voice"`
-	Note           uint8  `json:"note,omitempty"`
-	ScheduledFrame uint64 `json:"scheduled_frame"`
-	AppliedFrame   uint64 `json:"applied_frame"`
+	ID             uint64  `json:"id"`
+	Kind           string  `json:"kind"`
+	Instrument     string  `json:"instrument,omitempty"`
+	Voice          int     `json:"voice"`
+	Note           uint8   `json:"note,omitempty"`
+	Parameter      string  `json:"parameter,omitempty"`
+	Value          float64 `json:"value,omitempty"`
+	Generation     uint64  `json:"generation,omitempty"`
+	ScheduledFrame uint64  `json:"scheduled_frame"`
+	AppliedFrame   uint64  `json:"applied_frame"`
 }
 
 type Trace struct {

@@ -106,6 +106,20 @@ func (a *Allocator) Release(id uint64, at uint64) (NoteHandle, bool) {
 	delete(a.handles, id)
 	return r.handle, true
 }
+func (a *Allocator) Handle(id uint64, at uint64) (NoteHandle, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	v, ok := a.handles[id]
+	if !ok {
+		return NoteHandle{}, false
+	}
+	r := a.voices[v]
+	if !r.valid || r.handle.EventID != id || r.handle.EndFrame <= at {
+		return NoteHandle{}, false
+	}
+	return r.handle, true
+}
+
 func (a *Allocator) Valid(id uint64, at uint64) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()

@@ -1,0 +1,9 @@
+(defsynth control-step
+  {:voices 2
+   :params {:level {:default 24 :min 0 :max 128 :scope :instrument}
+            :velocity {:default 100 :min 0 :max 127 :scope :voice}}}
+  (oscillator {:type :sine :gain (param :velocity)})
+  (out {:gain (param :level)}))
+
+(play :control-step :a4 {:at 0 :dur 4 :params {:velocity 96}})
+(ctl :control-step :level 96 {:at 1})
