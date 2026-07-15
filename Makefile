@@ -1,7 +1,7 @@
 GO ?= go
 LGS := ./out/lgs
 
-.PHONY: bootstrap build test test-race test-audio test-patch lint doctor render-fixtures analyze-fixtures acceptance clean
+.PHONY: bootstrap build test test-race test-audio test-patch test-nrepl lint doctor render-fixtures analyze-fixtures acceptance clean
 bootstrap:
 	./scripts/bootstrap-fedora.sh
 
@@ -42,6 +42,9 @@ test-patch: build
 	$(LGS) patch inspect --input testdata/synths/modulation.lg --report out/fixtures/modulation-patch.json
 	! $(LGS) patch validate --input testdata/synths/invalid-stack.lg
 	! $(LGS) patch validate --input testdata/synths/invalid-routing.lg
+
+test-nrepl:
+	$(GO) test ./internal/nrepl
 
 acceptance: lint test test-race test-patch test-audio doctor
 

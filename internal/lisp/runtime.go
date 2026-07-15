@@ -28,17 +28,56 @@ type Runtime struct {
 	provider      instruments.PatchProvider
 	patchRegistry *patchmodel.Registry
 	evalMu        sync.Mutex
+	stdout        *routingWriter
+	stderr        *routingWriter
 	atBeat        *clock.Beat
 }
 
+type routingWriter struct {
+	mu            sync.RWMutex
+	defaultWriter io.Writer
+	current       io.Writer
+}
+
+func newRoutingWriter(w io.Writer) *routingWriter {
+	if w == nil {
+		w = io.Discard
+	}
+	return &routingWriter{defaultWriter: w}
+}
+
+func (w *routingWriter) Write(p []byte) (int, error) {
+	w.mu.RLock()
+	target := w.current
+	if target == nil {
+		target = w.defaultWriter
+	}
+	defer w.mu.RUnlock()
+	return target.Write(p)
+}
+
+func (w *routingWriter) route(target io.Writer) func() {
+	w.mu.Lock()
+	previous := w.current
+	w.current = target
+	w.mu.Unlock()
+	return func() {
+		w.mu.Lock()
+		w.current = previous
+		w.mu.Unlock()
+	}
+}
+
 func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *instruments.Allocator, p instruments.PatchProvider, registry *patchmodel.Registry, out, errOut io.Writer) (*Runtime, error) {
-	lg, err := api.NewLetGo("music.core", api.WithStdout(out), api.WithStderr(errOut))
+	stdout := newRoutingWriter(out)
+	stderr := newRoutingWriter(errOut)
+	lg, err := api.NewLetGo("music.core", api.WithStdout(stdout), api.WithStderr(stderr))
 	if err != nil {
 		return nil, err
 	}
 	// music.core defines transport `now`, intentionally shadowing core/now.
 	rt.NS("music.core").Exclude("now")
-	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry}
+	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry, stdout: stdout, stderr: stderr}
 	defs := map[string]func([]vm.Value) (vm.Value, error){"play": r.play, "release": r.release, "at": r.at, "tempo": r.tempo, "now": r.now, "stop-all": r.stopAll, "instruments": r.instrumentsFn, "note-number": r.noteNumber}
 	for name, f := range defs {
 		v, e := vm.NativeFnType.Wrap(f)
@@ -59,6 +98,108 @@ func (r *Runtime) Eval(src string) (vm.Value, error) {
 	defer r.evalMu.Unlock()
 	return r.lg.Run(src)
 }
+
+// EvalInNamespace evaluates through the same serialized boundary as Eval while
+// isolating the caller's current namespace and output streams. Definitions and
+// music runtime state remain process-global, as they are in a terminal REPL.
+func (r *Runtime) EvalInNamespace(src, namespace string, out, errOut io.Writer) (vm.Value, string, error) {
+	r.evalMu.Lock()
+	defer r.evalMu.Unlock()
+
+	previousNS := rt.CurrentNS.Deref().(*vm.Namespace)
+	if namespace == "" {
+		namespace = "music.core"
+	}
+	ns := rt.NS(namespace)
+	if ns == nil {
+		return vm.NIL, previousNS.Name(), fmt.Errorf("namespace %q does not exist", namespace)
+	}
+	rt.CurrentNS.SetRoot(ns)
+	defer rt.CurrentNS.SetRoot(previousNS)
+
+	restoreOut := r.stdout.route(out)
+	restoreErr := r.stderr.route(errOut)
+	defer restoreOut()
+	defer restoreErr()
+
+	forms := splitTopLevelForms(src)
+	value := vm.Value(vm.NIL)
+	var err error
+	for _, form := range forms {
+		value, err = r.lg.Run(form)
+		if err != nil {
+			break
+		}
+	}
+	current := rt.CurrentNS.Deref().(*vm.Namespace).Name()
+	return value, current, err
+}
+
+// splitTopLevelForms lets nREPL load-file compile forms sequentially. This is
+// important for namespace forms: wrapping a file in (do ...) compiles later
+// definitions before the namespace switch has executed.
+func splitTopLevelForms(src string) []string {
+	var forms []string
+	start, depth := -1, 0
+	inString, escaped, comment := false, false, false
+	for i, ch := range src {
+		if comment {
+			if ch == '\n' {
+				comment = false
+				if start >= 0 && depth == 0 {
+					forms = append(forms, strings.TrimSpace(src[start:i]))
+					start = -1
+				}
+			}
+			continue
+		}
+		if inString {
+			if escaped {
+				escaped = false
+			} else if ch == '\\' {
+				escaped = true
+			} else if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		if ch == ';' {
+			comment = true
+			continue
+		}
+		if start < 0 {
+			if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == ',' {
+				continue
+			}
+			start = i
+		}
+		switch ch {
+		case '"':
+			inString = true
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		}
+		if depth == 0 && (ch == ')' || ch == ']' || ch == '}') {
+			forms = append(forms, strings.TrimSpace(src[start:i+1]))
+			start = -1
+		} else if depth == 0 && (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == ',') {
+			form := strings.TrimSpace(src[start:i])
+			if form != "" {
+				forms = append(forms, form)
+			}
+			start = -1
+		}
+	}
+	if start >= 0 {
+		if form := strings.TrimSpace(src[start:]); form != "" {
+			forms = append(forms, form)
+		}
+	}
+	return forms
+}
+
 func (r *Runtime) EvalScript(src string) (vm.Value, error) { return r.Eval("(do\n" + src + "\n)") }
 func (r *Runtime) REPL(in io.Reader, out io.Writer) error {
 	s := bufio.NewScanner(in)
