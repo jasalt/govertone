@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -174,6 +175,10 @@ func TestNREPLPlayRendersAudio(t *testing.T) {
 	if errText := responseField(responses, "err"); errText != "" {
 		t.Fatalf("remote play: %s", errText)
 	}
+	responses = c.request(t, map[string]any{"op": "interrupt", "id": "interrupt-audio"})
+	if !hasStatus(responses[len(responses)-1], "session-idle") {
+		t.Fatalf("interrupt response: %#v", responses)
+	}
 	frames := clock.SampleRate * 2
 	samples, err := audio.RenderOffline(a.Engine, frames, 256)
 	if err != nil {
@@ -220,6 +225,65 @@ func TestStructuredErrorsOutputBoundsAndInterrupt(t *testing.T) {
 	responses = c.request(t, map[string]any{"op": "eval", "id": "healthy", "code": "(+ 20 22)"})
 	if responseField(responses, "value") != "42" {
 		t.Fatalf("evaluation unhealthy after interrupt: %#v", responses)
+	}
+}
+
+func TestSlowAndMalformedClientsDoNotBlockEvaluation(t *testing.T) {
+	_, server := startServer(t, 0)
+	slow, err := net.DialTimeout("tcp", server.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer slow.Close()
+	// Leave one decoder waiting forever on an incomplete bencode value.
+	if _, err = slow.Write([]byte("d4:code100:")); err != nil {
+		t.Fatal(err)
+	}
+
+	healthy := dial(t, server)
+	responses := healthy.request(t, map[string]any{"op": "eval", "id": "while-slow", "code": "(+ 40 2)"})
+	if responseField(responses, "value") != "42" {
+		t.Fatalf("slow peer blocked healthy eval: %#v", responses)
+	}
+
+	malformed, err := net.DialTimeout("tcp", server.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = malformed.Write([]byte("not-bencode"))
+	_ = malformed.Close()
+	responses = healthy.request(t, map[string]any{"op": "describe", "id": "after-malformed"})
+	if !hasStatus(responses[len(responses)-1], "done") {
+		t.Fatalf("malformed peer damaged server: %#v", responses)
+	}
+}
+
+func TestTerminalAndNREPLEvaluationShareSerializedBoundary(t *testing.T) {
+	a, server := startServer(t, 0)
+	var wg sync.WaitGroup
+	errors := make(chan string, 40)
+	for index := 0; index < 20; index++ {
+		wg.Add(2)
+		go func(id int) {
+			defer wg.Done()
+			peer := dial(t, server)
+			responses := peer.request(t, map[string]any{"op": "eval", "id": strconv.Itoa(id), "code": "(+ 1 2)"})
+			if responseField(responses, "value") != "3" {
+				errors <- "nREPL evaluation failed"
+			}
+		}(index)
+		go func() {
+			defer wg.Done()
+			value, err := a.Lisp.Eval("(+ 20 22)")
+			if err != nil || value.String() != "42" {
+				errors <- "terminal evaluation failed"
+			}
+		}()
+	}
+	wg.Wait()
+	close(errors)
+	for message := range errors {
+		t.Error(message)
 	}
 }
 
