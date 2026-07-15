@@ -80,6 +80,10 @@ func (r *Registry) PrepareUpsert(spec InstrumentSpec) (*PreparedRegistryUpdate, 
 		return nil, err
 	}
 	normalized.Metadata = spec.Metadata
+	normalized.Parameters = make(map[ParameterID]SynthParameter, len(spec.Parameters))
+	for id, parameter := range spec.Parameters {
+		normalized.Parameters[id] = parameter
+	}
 	definitions := cloneDefinitions(r.definitions)
 	order := append([]InstrumentID(nil), r.order...)
 	if _, ok := definitions[normalized.ID]; !ok {
@@ -193,9 +197,17 @@ func (r *Registry) Fingerprint() string {
 }
 func cloneInstrument(in InstrumentSpec) InstrumentSpec {
 	out := in
+	out.Parameters = make(map[ParameterID]SynthParameter, len(in.Parameters))
+	for id, parameter := range in.Parameters {
+		out.Parameters[id] = parameter
+	}
 	out.Units = make([]UnitSpec, len(in.Units))
 	for i, u := range in.Units {
 		u.Parameters = cloneParameters(u.Parameters)
+		u.ControlBindings = make(map[string]ControlReference, len(in.Units[i].ControlBindings))
+		for name, binding := range in.Units[i].ControlBindings {
+			u.ControlBindings[name] = binding
+		}
 		out.Units[i] = u
 	}
 	out.Metadata.Tags = append([]string(nil), in.Metadata.Tags...)
@@ -246,5 +258,6 @@ func cloneCompiled(in *CompiledPatch) *CompiledPatch {
 	}
 	out.Layout = cloneLayout(in.Layout)
 	out.Diagnostics = append([]Diagnostic(nil), in.Diagnostics...)
+	out.Bindings = append([]ControlBinding(nil), in.Bindings...)
 	return &out
 }

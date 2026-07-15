@@ -17,13 +17,45 @@ type PatchGeneration uint64
 
 type ParameterKind uint8
 
+type ParameterID string
+type ControlScope string
+
+const (
+	ScopeInstrument ControlScope = "instrument"
+	ScopeVoice      ControlScope = "voice"
+)
+
 const (
 	ParameterInteger ParameterKind = iota
 	ParameterFloat
 	ParameterBoolean
 	ParameterEnum
 	ParameterReference
+	ParameterControlReference
 )
+
+type SynthParameter struct {
+	ID            ParameterID  `json:"id"`
+	Default       float64      `json:"default"`
+	Minimum       float64      `json:"min"`
+	Maximum       float64      `json:"max"`
+	Scope         ControlScope `json:"scope"`
+	Smoothing     float64      `json:"smoothing"`
+	Curve         string       `json:"curve"`
+	Units         string       `json:"units,omitempty"`
+	Documentation string       `json:"doc,omitempty"`
+}
+
+type ParameterTransform struct {
+	Scale  float64 `json:"scale"`
+	Offset float64 `json:"offset"`
+	Clamp  bool    `json:"clamp"`
+}
+
+type ControlReference struct {
+	Parameter ParameterID        `json:"parameter"`
+	Transform ParameterTransform `json:"transform"`
+}
 
 type UnitReference struct {
 	Instrument InstrumentID `json:"instrument,omitempty"`
@@ -31,13 +63,14 @@ type UnitReference struct {
 	Port       string       `json:"port"`
 }
 type ParameterValue struct {
-	Kind      ParameterKind  `json:"kind"`
-	Integer   int            `json:"integer,omitempty"`
-	Float     float64        `json:"float,omitempty"`
-	Boolean   bool           `json:"boolean,omitempty"`
-	Enum      string         `json:"enum,omitempty"`
-	Reference *UnitReference `json:"reference,omitempty"`
-	Explicit  bool           `json:"explicit,omitempty"`
+	Kind      ParameterKind     `json:"kind"`
+	Integer   int               `json:"integer,omitempty"`
+	Float     float64           `json:"float,omitempty"`
+	Boolean   bool              `json:"boolean,omitempty"`
+	Enum      string            `json:"enum,omitempty"`
+	Reference *UnitReference    `json:"reference,omitempty"`
+	Control   *ControlReference `json:"control,omitempty"`
+	Explicit  bool              `json:"explicit,omitempty"`
 }
 type ParameterMap map[string]ParameterValue
 
@@ -56,6 +89,10 @@ func EnumParam(v string) ParameterValue {
 func RefParam(v UnitReference) ParameterValue {
 	c := v
 	return ParameterValue{Kind: ParameterReference, Reference: &c, Explicit: true}
+}
+func ControlParam(v ControlReference) ParameterValue {
+	c := v
+	return ParameterValue{Kind: ParameterControlReference, Control: &c, Explicit: true}
 }
 
 type SourceInfo struct {
@@ -80,20 +117,22 @@ type PatchSpec struct {
 	Metadata    PatchMetadata    `json:"metadata,omitempty"`
 }
 type InstrumentSpec struct {
-	ID       InstrumentID       `json:"id"`
-	Voices   int                `json:"voices"`
-	Units    []UnitSpec         `json:"units"`
-	Metadata InstrumentMetadata `json:"metadata,omitempty"`
+	ID         InstrumentID                   `json:"id"`
+	Voices     int                            `json:"voices"`
+	Parameters map[ParameterID]SynthParameter `json:"parameters,omitempty"`
+	Units      []UnitSpec                     `json:"units"`
+	Metadata   InstrumentMetadata             `json:"metadata,omitempty"`
 }
 type UnitSpec struct {
-	ID         UnitID       `json:"id,omitempty"`
-	ExplicitID bool         `json:"explicit_id,omitempty"`
-	Type       UnitType     `json:"type"`
-	Parameters ParameterMap `json:"parameters"`
-	Stereo     bool         `json:"stereo"`
-	StereoSet  bool         `json:"stereo_set,omitempty"`
-	Disabled   bool         `json:"disabled,omitempty"`
-	Metadata   UnitMetadata `json:"metadata,omitempty"`
+	ID              UnitID                      `json:"id,omitempty"`
+	ExplicitID      bool                        `json:"explicit_id,omitempty"`
+	Type            UnitType                    `json:"type"`
+	Parameters      ParameterMap                `json:"parameters"`
+	ControlBindings map[string]ControlReference `json:"control_bindings,omitempty"`
+	Stereo          bool                        `json:"stereo"`
+	StereoSet       bool                        `json:"stereo_set,omitempty"`
+	Disabled        bool                        `json:"disabled,omitempty"`
+	Metadata        UnitMetadata                `json:"metadata,omitempty"`
 }
 
 type CompiledInstrument struct {
@@ -109,12 +148,28 @@ type InstrumentLayout struct {
 	OrderedIDs  []InstrumentID                      `json:"ordered_ids"`
 	TotalVoices int                                 `json:"total_voices"`
 }
+type ControlBinding struct {
+	Index         int                `json:"index"`
+	InstrumentID  InstrumentID       `json:"instrument"`
+	ParameterID   ParameterID        `json:"parameter"`
+	UnitID        UnitID             `json:"unit_id"`
+	UnitIndex     int                `json:"unit_index"`
+	UnitParameter string             `json:"unit_parameter"`
+	Operand       int                `json:"operand"`
+	Scope         ControlScope       `json:"scope"`
+	Minimum       float64            `json:"min"`
+	Maximum       float64            `json:"max"`
+	Default       float64            `json:"default"`
+	Transform     ParameterTransform `json:"transform"`
+}
+
 type CompiledPatch struct {
 	Patch       sointu.Patch     `json:"-"`
 	Spec        PatchSpec        `json:"spec"`
 	Layout      InstrumentLayout `json:"layout"`
 	Fingerprint string           `json:"fingerprint"`
 	Diagnostics []Diagnostic     `json:"diagnostics"`
+	Bindings    []ControlBinding `json:"control_bindings,omitempty"`
 	Generation  PatchGeneration  `json:"generation"`
 }
 

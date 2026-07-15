@@ -30,11 +30,14 @@ func NewParameterMap(values map[string]ParameterValue) (ParameterMap, error) {
 		if name == "" {
 			return nil, fmt.Errorf("parameter name cannot be empty")
 		}
-		if v.Kind > ParameterReference {
+		if v.Kind > ParameterControlReference {
 			return nil, fmt.Errorf("parameter %q has invalid value kind", name)
 		}
 		if v.Kind == ParameterReference && (v.Reference == nil || v.Reference.Unit == "") {
 			return nil, fmt.Errorf("parameter %q has invalid unit reference", name)
+		}
+		if v.Kind == ParameterControlReference && (v.Control == nil || v.Control.Parameter == "") {
+			return nil, fmt.Errorf("parameter %q has invalid control reference", name)
 		}
 		out[name] = cloneParameter(v)
 	}
@@ -44,6 +47,10 @@ func cloneParameter(v ParameterValue) ParameterValue {
 	if v.Reference != nil {
 		r := *v.Reference
 		v.Reference = &r
+	}
+	if v.Control != nil {
+		c := *v.Control
+		v.Control = &c
 	}
 	return v
 }
@@ -110,7 +117,7 @@ func NewInstrument(id InstrumentID, voices int, units ...UnitSpec) (InstrumentSp
 		}
 		copyUnits[i] = u
 	}
-	return InstrumentSpec{ID: normalized, Voices: voices, Units: copyUnits}, nil
+	return InstrumentSpec{ID: normalized, Voices: voices, Parameters: map[ParameterID]SynthParameter{}, Units: copyUnits}, nil
 }
 func NewPatch(specs ...InstrumentSpec) (PatchSpec, error) {
 	seen := map[InstrumentID]bool{}
@@ -125,6 +132,10 @@ func NewPatch(specs ...InstrumentSpec) (PatchSpec, error) {
 		}
 		seen[normalized.ID] = true
 		normalized.Metadata = s.Metadata
+		normalized.Parameters = make(map[ParameterID]SynthParameter, len(s.Parameters))
+		for id, parameter := range s.Parameters {
+			normalized.Parameters[id] = parameter
+		}
 		out[i] = normalized
 	}
 	return PatchSpec{Instruments: out}, nil
