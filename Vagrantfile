@@ -59,6 +59,11 @@
   # config.vm.provision "shell", inline: "sudo npm install -g agent-browser"
   config.vm.provision "shell", inline: "npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
 
+  # https://github.com/cli/cli/blob/trunk/docs/install_linux.md#dnf4
+  # sudo dnf install 'dnf-command(config-manager)'
+  # sudo dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo
+  # sudo dnf install gh
+
   # Set same UID / GID as host user so shared folder can be accessed without
   # permission changes
   host_uid = `id -u`.strip
@@ -108,7 +113,8 @@ SHELL
        domain.graphics_type = "spice"
        domain.memory = 4096
        domain.video_type = "qxl"
-       # TODO audio
+       # Send the guest sound device to the connected SPICE virt-viewer.
+       domain.sound_type = "ich6"
 
        # Required for virtiofs shared folders
        domain.qemu_use_session = false          # use qemu:///system

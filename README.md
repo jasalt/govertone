@@ -78,6 +78,23 @@ The zero-sustain envelopes make this a struck, decaying sound even while the not
 
 Reevaluating the same `defsynth` with changed units transactionally updates Sointu while preserving `:bell`. An invalid redefinition leaves the previous synth and generation active. See [the patch DSL guide](docs/patch-dsl.md).
 
+## Sointu limits and voice budgeting
+
+Sointu v0.6.0 permits at most **32 voices across the entire patch**, not 32 per `defsynth`. The startup `:sine`, `:lead`, and `:bass` definitions reserve 24, so adding `{:voices 34}` can never work and adding `{:voices 32}` also exceeds the existing aggregate. Replace the patch to dedicate all 32 voices to one synth:
+
+```clojure
+(install-patch!
+  (patch
+    (instrument :live-lead {:voices 32}
+      (envelope {:attack 4 :decay 32 :sustain 100 :release 40})
+      (oscillator {:type :saw})
+      (mulp)
+      (filter {:type :lowpass :frequency 108 :resonance 110})
+      (out {:gain 70}))))
+```
+
+More than 32 independently gated notes requires multiple Sointu instances and external mixing; current `lgs` uses one instance. Voice stealing, realistic per-instrument allocations, and multiple/unison oscillators per voice can reduce demand, but layered oscillators are not independent voices. Sointu also imposes unit, stack, routing, delay, sample-table, and output constraints. See [Sointu restrictions and workarounds](docs/sointu-restrictions.md).
+
 ## Live controls and automation
 
 Declare symbolic parameters in `defsynth`, then update or automate them without recompiling the patch:
@@ -153,6 +170,7 @@ The operational subcommands accept `--log-level error|warn|info|debug` and `--js
 - [unit reference](docs/unit-reference.md)
 - [patch lifecycle](docs/patch-lifecycle.md)
 - [patch errors](docs/patch-errors.md)
+- [Sointu restrictions and workarounds](docs/sointu-restrictions.md)
 - [audio validation](docs/audio-validation.md)
 - [Fedora troubleshooting](docs/troubleshooting-fedora.md)
 
@@ -164,7 +182,7 @@ The operational subcommands accept `--log-level error|warn|info|debug` and `--js
 ## Current limitations (Phase 3 in progress)
 
 - A changed aggregate patch conservatively invalidates all active note handles and resets voice allocation. There is no crossfade or general Sointu state migration yet, so live redefinition can produce an audible transition.
-- Sointu v0.6.0 limits the aggregate to 32 voices and each instrument to 63 units. The three startup synths use 24 voices; remove or replace them when a project needs a different layout.
+- Sointu v0.6.0 limits the aggregate to 32 voices and each instrument to 63 encoded units. The three startup synths use 24 voices; remove or replace them when a project needs a different layout. More than 32 voices requires separately mixed VM instances; see [the restrictions and workarounds guide](docs/sointu-restrictions.md).
 - Named controls, per-note values, smoothing, and built-in automation curves are supported. Control buses and arbitrary user-defined audio-rate automation functions are not.
 - Only stereo output at 44.1 kHz is supported. There is no sample-library management, disk streaming, microphone input, or multichannel output.
 - There is no MIDI, OSC, pattern language, swing/groove engine, tempo ramp, plugin system, native controlled export, WebAssembly controlled export, or arbitrary user-defined DSP opcode support.

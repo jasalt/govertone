@@ -63,4 +63,4 @@ A `(ref ...)` port must correspond to a parameter marked `CanModulate` by Sointu
 
 ## Portable stack limit
 
-The Go VM can allocate a larger software stack, while common native Sointu targets use the x87 eight-slot stack. Default `:portable` compilation rejects depth above eight scalar slots. Compiler `:go` mode is available to Go callers. Sointu v0.6.0 also limits an instrument to 63 units and the aggregate to 32 voices; both limits are enforced before installation.
+The Go VM can allocate a larger software stack, while common native Sointu targets use the x87 eight-slot stack. Default `:portable` compilation rejects depth above eight scalar slots. Compiler `:go` mode is available to Go callers. Sointu v0.6.0 also limits an instrument to 63 encoded units and the aggregate to 32 voices; both limits are enforced before installation. Practical ways to reduce stack, unit, and voice use are collected in [Sointu restrictions and workarounds](sointu-restrictions.md).

@@ -31,7 +31,7 @@ Possible codes are `:unknown-reference-instrument`, `:unknown-reference-unit`, a
 
 ## Identity and limits
 
-Duplicate synth/unit IDs report `:duplicate-instrument-id` or `:duplicate-unit-id`. Invalid IDs, more than 63 units per instrument, aggregate voices above 32, and portable stack overflow are rejected before Sointu update.
+Duplicate synth/unit IDs report `:duplicate-instrument-id` or `:duplicate-unit-id`. Invalid IDs, more than 63 units per instrument, aggregate voices above 32, and portable stack overflow are rejected before Sointu update. These are aggregate/bytecode restrictions rather than recoverable update errors; see [Sointu restrictions and workarounds](sointu-restrictions.md).
 
 ## Update failures
 

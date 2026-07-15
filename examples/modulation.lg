@@ -1,4 +1,4 @@
-(defsynth modulated {:voices 2}
+(defsynth modulated {:voices 1}
   (oscillator {:type :sine} {:id :main-osc})
   (send {:target (ref :main-osc :transpose) :amount 64})
   (out {:gain 72}))

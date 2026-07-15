@@ -14,7 +14,7 @@ Phase 2 turns every instrument, including the original `:sine`, `:lead`, and `:b
   (out {:gain 70}))
 ```
 
-The macro installs the candidate and binds `soft-lead` to a printable synth descriptor. Both `(play soft-lead :c4)` and `(play :soft-lead :c4)` resolve the current layout. For an unqualified symbol, its symbolic ID is the symbol name. `{:id :demo/soft-lead}` overrides that ID. `:voices` is mandatory and the aggregate Sointu limit is 32.
+The macro installs the candidate and binds `soft-lead` to a printable synth descriptor. Both `(play soft-lead :c4)` and `(play :soft-lead :c4)` resolve the current layout. For an unqualified symbol, its symbolic ID is the symbol name. `{:id :demo/soft-lead}` overrides that ID. `:voices` is mandatory and the aggregate Sointu limit is 32—not 32 per synth. The startup instruments consume 24 voices. See [Sointu restrictions and workarounds](sointu-restrictions.md) for replacing the startup patch, budgeting polyphony, and multi-instance alternatives.
 
 Reevaluation retains the first-registration position. A changed aggregate increments the generation exactly once. Byte-identical normalized definitions are elided and return `:changed false`. Failed construction, stack analysis, routing, upstream compilation, or update leaves the prior registry generation and var value intact.
 
