@@ -129,9 +129,9 @@ func TestEvalSessionNamespaceAndMusicAPI(t *testing.T) {
 		t.Fatalf("session namespace did not persist: %#v", responses)
 	}
 
-	definition := `(defsynth remote-tone {:voices 2}
+	definition := `(defsynth remote-tone {:voices 2 :params {:level {:default 32 :min 0 :max 128}}}
 	  (oscillator {:type :sine})
-	  (out {:gain 72}))`
+	  (out {:gain (param :level)}))`
 	responses = c.request(t, map[string]any{"op": "load-file", "id": "load-1", "session": sessionID, "file": "(in-ns 'music.core)\n" + definition})
 	if errText := responseField(responses, "err"); errText != "" {
 		t.Fatalf("remote defsynth: %s", errText)
@@ -142,6 +142,28 @@ func TestEvalSessionNamespaceAndMusicAPI(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("nREPL evaluation did not reach process-global music API")
+	}
+	responses = c.request(t, map[string]any{"op": "eval", "id": "ctl-1", "session": sessionID, "code": `(ctl :remote-tone :level 90)`})
+	if errText := responseField(responses, "err"); errText != "" {
+		t.Fatalf("remote ctl: %s", errText)
+	}
+	if _, renderErr := audio.RenderOffline(a.Engine, 1, 1); renderErr != nil {
+		t.Fatal(renderErr)
+	}
+	trace := a.Engine.ControlTrace()
+	if len(trace.Events) != 1 || trace.Events[0].Parameter != "level" || trace.Events[0].Value != 90 {
+		t.Fatalf("remote ctl did not reach scheduler: %#v", trace.Events)
+	}
+	responses = c.request(t, map[string]any{"op": "eval", "id": "ramp-1", "session": sessionID, "code": `(ramp :remote-tone :level 90 40 {:dur 1 :curve :linear})`})
+	if errText := responseField(responses, "err"); errText != "" {
+		t.Fatalf("remote ramp: %s", errText)
+	}
+	if _, renderErr := audio.RenderOffline(a.Engine, 22051, 256); renderErr != nil {
+		t.Fatal(renderErr)
+	}
+	automationTrace := a.Engine.AutomationTrace()
+	if len(automationTrace.Events) != 2 || automationTrace.Events[0].Kind != "start" || automationTrace.Events[1].Kind != "complete" {
+		t.Fatalf("remote ramp did not reach automation evaluator: %#v", automationTrace.Events)
 	}
 }
 

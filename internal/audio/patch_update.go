@@ -66,6 +66,7 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 	}
 	e.layout = make(map[patchmodel.InstrumentID]instruments.Definition, len(compiled.Layout.Instruments))
 	e.controls = newControlState(compiled)
+	e.automation = newAutomationState()
 	for id, instrument := range compiled.Layout.Instruments {
 		e.layout[id] = instruments.Definition{ID: id, FirstVoice: instruments.VoiceID(instrument.FirstVoice), Voices: instrument.NumVoices}
 	}

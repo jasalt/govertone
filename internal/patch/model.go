@@ -160,6 +160,7 @@ type ControlBinding struct {
 	Minimum       float64            `json:"min"`
 	Maximum       float64            `json:"max"`
 	Default       float64            `json:"default"`
+	Smoothing     float64            `json:"smoothing"`
 	Transform     ParameterTransform `json:"transform"`
 }
 
