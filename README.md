@@ -109,7 +109,7 @@ Start an nREPL listener on an OS-selected local port:
 # nREPL listening on 127.0.0.1:43817
 ```
 
-The resolved port is written to `.nrepl-port` by default for CIDER, Calva, and Conjure discovery. nREPL binds only to loopback unless `--nrepl-bind` explicitly requests another address. Remote evaluation uses the same serialized let-go boundary and normal music APIs as the terminal REPL; it never evaluates Lisp on the audio callback. See [the nREPL guide](docs/nrepl.md) for operations, editor setup, security, and interrupt limitations.
+The resolved port is written to `.nrepl-port` by default for CIDER, Calva, Conjure, and CLI clients such as [brepl](https://github.com/licht1stein/brepl). nREPL binds only to loopback unless `--nrepl-bind` explicitly requests another address. Remote evaluation uses the same serialized let-go boundary and normal music APIs as the terminal REPL; it never evaluates Lisp on the audio callback. See [the nREPL guide](docs/nrepl.md) for operations, editor setup, security, and interrupt limitations.
 
 ## Deterministic rendering and validation
 

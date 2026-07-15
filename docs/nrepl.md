@@ -21,9 +21,24 @@ lgs repl --nrepl 7888 --nrepl-bind 0.0.0.0
 
 `lgs` prints a security warning when configured this way. Use host firewalling and a trusted network.
 
-## Editor connections
+## Editor and CLI clients
 
 Read the port from `.nrepl-port`, then connect to `127.0.0.1` from CIDER, Calva, Conjure, or another nREPL client. The pinned let-go protocol implementation has raw-protocol integration coverage; full CIDER compatibility certification is not part of Phase 3.
+
+### brepl
+
+[`brepl`](https://github.com/licht1stein/brepl) v2.7.1 was validated with Babashka v1.12.218 against `lgs repl --no-audio --nrepl 0`:
+
+```bash
+brepl -e '(+ 1 2 3)'                            # => 6
+brepl -e '(do (println "hello") (* 6 7))'       # stdout, then 42
+brepl -m '{"op" "describe"}' --verbose
+brepl -f path/inside/this/project/script.lg
+```
+
+Expression evaluation, stdout/value responses, raw `describe`, structured nonzero error exits, `.nrepl-port` discovery, and file evaluation all work. For `-f`, brepl searches upward from the evaluated file for `.nrepl-port`; use `-p PORT` when the file is outside the project tree.
+
+brepl implements `-f` by evaluating `(load-file "...")` rather than sending the nREPL `load-file` operation. `music.core/load-file` supports that client behavior, evaluates top-level forms sequentially in the session namespace, and limits files to 16 MiB.
 
 Supported operations:
 

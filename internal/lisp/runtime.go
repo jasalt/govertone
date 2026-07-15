@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -79,7 +80,7 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 	// music.core defines transport `now`, intentionally shadowing core/now.
 	rt.NS("music.core").Exclude("now")
 	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry, stdout: stdout, stderr: stderr}
-	defs := map[string]func([]vm.Value) (vm.Value, error){"play": r.play, "release": r.release, "at": r.at, "tempo": r.tempo, "now": r.now, "stop-all": r.stopAll, "instruments": r.instrumentsFn, "note-number": r.noteNumber}
+	defs := map[string]func([]vm.Value) (vm.Value, error){"play": r.play, "release": r.release, "at": r.at, "tempo": r.tempo, "now": r.now, "stop-all": r.stopAll, "instruments": r.instrumentsFn, "note-number": r.noteNumber, "load-file": r.loadFile}
 	for name, f := range defs {
 		v, e := vm.NativeFnType.Wrap(f)
 		if e != nil {
@@ -208,6 +209,40 @@ func splitTopLevelForms(src string) []string {
 }
 
 func (r *Runtime) EvalScript(src string) (vm.Value, error) { return r.Eval("(do\n" + src + "\n)") }
+
+// loadFile provides the Clojure-compatible function used by clients such as
+// brepl. It runs inside the caller's already-serialized evaluation context, so
+// namespace changes persist in that nREPL session without recursively taking
+// evalMu. Files are bounded to avoid accidental unbounded editor requests.
+func (r *Runtime) loadFile(args []vm.Value) (vm.Value, error) {
+	if len(args) != 1 {
+		return vm.NIL, fmt.Errorf("load-file expects one path")
+	}
+	path, ok := args[0].(vm.String)
+	if !ok || path == "" {
+		return vm.NIL, fmt.Errorf("load-file path must be a non-empty string")
+	}
+	const maximumLoadFileBytes = 16 << 20
+	info, err := os.Stat(string(path))
+	if err != nil {
+		return vm.NIL, fmt.Errorf("load-file: %w", err)
+	}
+	if info.Size() > maximumLoadFileBytes {
+		return vm.NIL, fmt.Errorf("load-file exceeds %d-byte limit", maximumLoadFileBytes)
+	}
+	source, err := os.ReadFile(string(path))
+	if err != nil {
+		return vm.NIL, fmt.Errorf("load-file: %w", err)
+	}
+	value := vm.Value(vm.NIL)
+	for _, form := range splitTopLevelForms(string(source)) {
+		value, err = r.lg.Run(form)
+		if err != nil {
+			return vm.NIL, err
+		}
+	}
+	return value, nil
+}
 func (r *Runtime) REPL(in io.Reader, out io.Writer) error {
 	s := bufio.NewScanner(in)
 	var pending strings.Builder

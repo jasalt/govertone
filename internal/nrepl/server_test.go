@@ -168,6 +168,23 @@ func TestEvalSessionNamespaceAndMusicAPI(t *testing.T) {
 	}
 }
 
+func TestBreplStyleLoadFileEval(t *testing.T) {
+	_, server := startServer(t, 0)
+	c := dial(t, server)
+	path := t.TempDir() + "/brepl-file.lg"
+	source := "(in-ns 'music.core)\n(def brepl-file-value 40)\n(+ brepl-file-value 2)\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	responses := c.request(t, map[string]any{"op": "eval", "id": "brepl-load-file", "code": `(load-file "` + path + `")`})
+	if errText := responseField(responses, "err"); errText != "" {
+		t.Fatalf("brepl-style load-file: %s", errText)
+	}
+	if value := responseField(responses, "value"); value != "42" {
+		t.Fatalf("load-file value %q in %#v", value, responses)
+	}
+}
+
 func TestNREPLPlayRendersAudio(t *testing.T) {
 	a, server := startServer(t, 0)
 	c := dial(t, server)
