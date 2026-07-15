@@ -142,6 +142,22 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 		return nil, &CompileError{[]Diagnostic{diag("patch-compile-failed", "", 0, "", "", fmt.Sprintf("Sointu rejected patch: %v", err))}}
 	}
 	for instrumentIndex, instrument := range normalized.Instruments {
+		compiledInstrument := result.Layout.Instruments[instrument.ID]
+		if !hasEnabledEnvelope(instrument) {
+			for unitIndex, unit := range instrument.Units {
+				if unit.Disabled {
+					continue
+				}
+				for _, parameter := range outputGainParameters(unit.Type) {
+					operand, ok := bytecode.ParameterOperands[sointuvm.ParameterAddress{Instrument: instrumentIndex, Unit: unitIndex, Parameter: parameter}]
+					if ok {
+						compiledInstrument.HardReleaseOperands = append(compiledInstrument.HardReleaseOperands, operand)
+					}
+				}
+			}
+		}
+		result.Layout.Instruments[instrument.ID] = compiledInstrument
+
 		for unitIndex, unit := range instrument.Units {
 			names := make([]string, 0, len(unit.ControlBindings))
 			for name := range unit.ControlBindings {
@@ -493,6 +509,28 @@ func controllableParameter(unitType UnitType, name string) bool {
 		}
 	}
 	return false
+}
+
+func hasEnabledEnvelope(instrument InstrumentSpec) bool {
+	for _, unit := range instrument.Units {
+		if unit.Type == "envelope" && !unit.Disabled {
+			return true
+		}
+	}
+	return false
+}
+
+func outputGainParameters(unitType UnitType) []string {
+	switch unitType {
+	case "out":
+		return []string{"gain"}
+	case "outaux":
+		return []string{"outgain", "auxgain"}
+	case "aux":
+		return []string{"gain"}
+	default:
+		return nil
+	}
 }
 
 func hasErrors(ds []Diagnostic) bool {

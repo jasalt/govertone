@@ -136,12 +136,13 @@ type UnitSpec struct {
 }
 
 type CompiledInstrument struct {
-	ID          InstrumentID   `json:"id"`
-	Index       int            `json:"index"`
-	FirstVoice  int            `json:"first_voice"`
-	NumVoices   int            `json:"voices"`
-	UnitIDs     map[UnitID]int `json:"unit_ids"`
-	Fingerprint string         `json:"fingerprint"`
+	ID                  InstrumentID   `json:"id"`
+	Index               int            `json:"index"`
+	FirstVoice          int            `json:"first_voice"`
+	NumVoices           int            `json:"voices"`
+	UnitIDs             map[UnitID]int `json:"unit_ids"`
+	Fingerprint         string         `json:"fingerprint"`
+	HardReleaseOperands []int          `json:"-"`
 }
 type InstrumentLayout struct {
 	Instruments map[InstrumentID]CompiledInstrument `json:"instruments"`

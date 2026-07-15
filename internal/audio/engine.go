@@ -29,27 +29,28 @@ type Stats struct {
 }
 
 type Engine struct {
-	synth            sointu.Synth
-	scheduler        *scheduler.Scheduler
-	frame            atomic.Uint64
-	owners           [32]uint64
-	layout           map[instruments.InstrumentID]instruments.Definition
-	renderMu         sync.Mutex
-	patchGeneration  atomic.Uint64
-	patchFingerprint atomic.Value
-	patchRequest     atomic.Uint64
-	patchTraceMu     sync.Mutex
-	patchTrace       []PatchUpdateTrace
-	traceMu          sync.Mutex
-	closeOnce        sync.Once
-	trace            []scheduler.TraceEvent
-	late             atomic.Uint64
-	dropped          atomic.Uint64
-	maxRender        atomic.Int64
-	controlApplied   atomic.Uint64
-	controlRejected  atomic.Uint64
-	controls         *controlState
-	automation       *automationState
+	synth               sointu.Synth
+	scheduler           *scheduler.Scheduler
+	frame               atomic.Uint64
+	owners              [32]uint64
+	layout              map[instruments.InstrumentID]instruments.Definition
+	renderMu            sync.Mutex
+	patchGeneration     atomic.Uint64
+	patchFingerprint    atomic.Value
+	patchRequest        atomic.Uint64
+	patchTraceMu        sync.Mutex
+	patchTrace          []PatchUpdateTrace
+	traceMu             sync.Mutex
+	closeOnce           sync.Once
+	trace               []scheduler.TraceEvent
+	late                atomic.Uint64
+	dropped             atomic.Uint64
+	maxRender           atomic.Int64
+	controlApplied      atomic.Uint64
+	controlRejected     atomic.Uint64
+	controls            *controlState
+	hardReleaseOperands map[instruments.InstrumentID][]int
+	automation          *automationState
 }
 
 func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm float64) (*Engine, error) {
@@ -63,10 +64,11 @@ func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm f
 	}); ok {
 		compiled = source.Compiled()
 	}
-	e := &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}, controls: newControlState(compiled), automation: newAutomationState()}
+	e := &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}, controls: newControlState(compiled), hardReleaseOperands: newHardReleaseOperands(compiled), automation: newAutomationState()}
 	for _, definition := range provider.Instruments() {
 		e.layout[definition.ID] = definition
 	}
+	e.initializeHardReleaseControls()
 	e.patchGeneration.Store(1)
 	e.patchFingerprint.Store(provider.Fingerprint())
 	return e, nil
@@ -187,7 +189,7 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 		e.owners[voice] = ev.HandleID
 	case scheduler.EventRelease:
 		if e.owners[voice] == ev.HandleID {
-			e.synth.Release(voice)
+			e.releaseVoice(voice, ev.Instrument)
 			e.owners[voice] = 0
 		}
 	case scheduler.EventSetControl:
@@ -225,10 +227,10 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 			return
 		}
 	case scheduler.EventStopAll:
-		for i, id := range e.owners {
+		for voiceIndex, id := range e.owners {
 			if id != 0 {
-				e.synth.Release(i)
-				e.owners[i] = 0
+				e.releaseVoice(voiceIndex, e.instrumentAtVoice(voiceIndex))
+				e.owners[voiceIndex] = 0
 			}
 		}
 	}

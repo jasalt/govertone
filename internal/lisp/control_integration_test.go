@@ -8,7 +8,9 @@ import (
 
 	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/audio"
+	"github.com/example/letgo-sointu/internal/clock"
 	patchmodel "github.com/example/letgo-sointu/internal/patch"
+	"github.com/nooga/let-go/pkg/vm"
 )
 
 const controlledTone = `(defsynth controlled-tone
@@ -42,6 +44,72 @@ func TestNamedParametersCompileToDeterministicBindings(t *testing.T) {
 	}
 	if bindings[1].ParameterID != "level" || bindings[1].UnitParameter != "gain" || bindings[1].Scope != patchmodel.ScopeInstrument {
 		t.Fatalf("second binding = %#v", bindings[1])
+	}
+}
+
+func TestDefsynthWithoutEnvelopeReleasesAndReusesVoice(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err = a.Lisp.Eval(controlledTone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(play :controlled-tone :e5 {:at 0 :dur 1})`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(play :controlled-tone :e5 {:at 3/2 :dur 1/2})`); err != nil {
+		t.Fatal(err)
+	}
+	buffer, err := audio.RenderOffline(a.Engine, clock.SampleRate, 257)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := controlRMS(buffer[1000:21000]); got < 0.001 {
+		t.Fatalf("first note RMS = %g, want audible signal", got)
+	}
+	if got := controlRMS(buffer[22051:32000]); got != 0 {
+		t.Fatalf("released note RMS = %g, want silence", got)
+	}
+	if got := controlRMS(buffer[34000:43000]); got < 0.001 {
+		t.Fatalf("reused voice RMS = %g, want audible signal", got)
+	}
+	trace := a.Engine.Trace(257)
+	if len(trace.Events) < 2 || trace.Events[1].Kind != "release" || trace.Events[1].AppliedFrame != 22050 {
+		t.Fatalf("release trace = %#v", trace.Events)
+	}
+}
+
+func TestExplicitReleaseMutesDefsynthWithoutEnvelope(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err = a.Lisp.Eval(controlledTone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(def held-note (play :controlled-tone :e5))`); err != nil {
+		t.Fatal(err)
+	}
+	before, err := audio.RenderOffline(a.Engine, 4096, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := controlRMS(before); got < 0.001 {
+		t.Fatalf("held note RMS = %g, want audible signal", got)
+	}
+	released, err := a.Lisp.Eval(`(release held-note)`)
+	if err != nil || released != vm.TRUE {
+		t.Fatalf("release = %v, err = %v", released, err)
+	}
+	after, err := audio.RenderOffline(a.Engine, 4096, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := controlRMS(after); got != 0 {
+		t.Fatalf("explicitly released note RMS = %g, want silence", got)
 	}
 }
 

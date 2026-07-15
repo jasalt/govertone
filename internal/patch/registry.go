@@ -235,6 +235,7 @@ func cloneLayout(in InstrumentLayout) InstrumentLayout {
 	out := InstrumentLayout{TotalVoices: in.TotalVoices, OrderedIDs: append([]InstrumentID(nil), in.OrderedIDs...), Instruments: make(map[InstrumentID]CompiledInstrument, len(in.Instruments))}
 	for id, v := range in.Instruments {
 		v.UnitIDs = cloneUnitIDs(v.UnitIDs)
+		v.HardReleaseOperands = append([]int(nil), v.HardReleaseOperands...)
 		out.Instruments[id] = v
 	}
 	return out
