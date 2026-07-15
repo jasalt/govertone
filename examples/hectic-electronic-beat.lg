@@ -1,0 +1,152 @@
+;; Thirty seconds of algorithmic electro: distorted drums, a filtered bass,
+;; delayed stabs, bit-crushed noise effects, and sample-accurate filter sweeps.
+;;
+;; The musical section lasts 27 seconds. One second of timeline plus a two-second
+;; effect tail makes the rendered file exactly 30 seconds:
+;;   ./out/lgs render --input examples/hectic-electronic-beat.lg \
+;;     --output out/hectic-electronic-beat.wav --duration 28s --tail 2s
+
+(tempo 160)
+
+;; Replace the startup patch so the full 32-voice budget is available to this
+;; self-contained drum machine. The six instruments below use 31 voices.
+(install-patch!
+  (patch
+    (instrument :kick {:voices 3 :doc "Distorted sine kick"}
+      (envelope {:attack 0 :decay 24 :sustain 0 :release 12})
+      (oscillator {:type :sine :transpose 52 :gain 128})
+      (mulp)
+      (distort {:drive 72})
+      (out {:gain 54}))
+
+    (instrument :hat {:voices 4 :doc "Short crushed noise hat"}
+      (envelope {:attack 0 :decay 8 :sustain 0 :release 5})
+      (noise {:shape 96 :gain 92})
+      (mulp)
+      (filter {:type :highpass :frequency 108 :resonance 78})
+      (crush {:resolution 104})
+      (out {:gain 34}))
+
+    (instrument :snare {:voices 4 :doc "Band-passed noise snare"}
+      (envelope {:attack 0 :decay 28 :sustain 0 :release 18})
+      (noise {:shape 72 :gain 108})
+      (mulp)
+      (filter {:type :bandpass :frequency 92 :resonance 84})
+      (distort {:drive 48})
+      (out {:gain 38}))
+
+    (instrument :acid-bass
+      {:voices 6
+       :doc "Automated resonant pulse bass"
+       :params {:cutoff {:default 48 :min 32 :max 120
+                         :smoothing 0.01 :scope :instrument}}}
+      (oscillator {:type :pulse :color 104 :shape 54 :gain 112})
+      (filter {:type :lowpass
+               :frequency (param :cutoff)
+               :resonance 116})
+      (envelope {:attack 1 :decay 22 :sustain 88 :release 16})
+      (mulp)
+      (distort {:drive 42})
+      (out {:gain 40}))
+
+    (instrument :laser-stab
+      {:voices 8
+       :doc "Resonant chord stab with tempo-synced echo"
+       :params {:tone {:default 96 :min 48 :max 124
+                       :smoothing 0.005 :scope :instrument}}}
+      (envelope {:attack 1 :decay 40 :sustain 18 :release 38})
+      (oscillator {:type :saw :color 112 :unison 1 :detune 67 :gain 104})
+      (mulp)
+      (filter {:type :bandpass
+               :frequency (param :tone)
+               :resonance 108})
+      (delay {:pregain 74 :dry 104 :feedback 76 :damp 88
+              :delaytime 8269})
+      (out {:gain 30}))
+
+    (instrument :noise-fx
+      {:voices 6
+       :doc "Swept bit-crushed noise and feedback"
+       :params {:sweep {:default 38 :min 24 :max 124
+                        :smoothing 0.02 :scope :instrument}
+                :bits {:default 112 :min 24 :max 124
+                       :scope :instrument}}}
+      (envelope {:attack 36 :decay 54 :sustain 72 :release 64})
+      (noise {:shape 112 :gain 96})
+      (mulp)
+      (filter {:type :bandpass
+               :frequency (param :sweep)
+               :resonance 112})
+      (crush {:resolution (param :bits)})
+      (delay {:pregain 70 :dry 96 :feedback 92 :damp 76
+              :delaytime 16538})
+      (out {:gain 26}))))
+
+;; Four-bar automation phrases continuously open, crush, and reset the sound.
+(ramp :acid-bass :cutoff 38 116 {:at 0  :dur 16 :curve :exponential})
+(ramp :acid-bass :cutoff 116 44 {:at 16 :dur 16 :curve :smoothstep})
+(ramp :acid-bass :cutoff 44 120 {:at 32 :dur 16 :curve :linear})
+(ramp :acid-bass :cutoff 120 36 {:at 48 :dur 16 :curve :smoothstep})
+(ramp :acid-bass :cutoff 36 104 {:at 64 :dur 8  :curve :exponential})
+
+(ramp :laser-stab :tone 54 122 {:at 0  :dur 24 :curve :smoothstep})
+(ramp :laser-stab :tone 122 64 {:at 24 :dur 24 :curve :linear})
+(ramp :laser-stab :tone 64 120 {:at 48 :dur 24 :curve :smoothstep})
+
+(ramp :noise-fx :sweep 28 122 {:at 0  :dur 36 :curve :exponential})
+(ramp :noise-fx :sweep 122 32 {:at 36 :dur 36 :curve :smoothstep})
+(ramp :noise-fx :bits 120 28 {:at 0  :dur 32 :curve :linear})
+(ramp :noise-fx :bits 28 118 {:at 32 :dur 40 :curve :smoothstep})
+
+(def bass-notes [:c2 :c2 :ab1 :bb1 :c2 :eb2 :f2 :g1])
+(def stab-chords [[:c4 :eb4 :g4]
+                  [:c4 :f4 :ab4]
+                  [:ab3 :c4 :eb4]
+                  [:bb3 :d4 :f4]])
+(def hat-steps [0 1/2 1 3/2 2 5/2 3 7/2])
+
+;; Eighteen four-beat bars = 72 beats = 27 seconds at 160 BPM.
+(doseq [bar (range 0 18)]
+  (let [start (* bar 4)
+        root (nth bass-notes (mod bar 8))
+        chord (nth stab-chords (mod bar 4))]
+
+    ;; Alternating broken kick patterns avoid a static four-on-the-floor loop.
+    (doseq [offset (if (= (mod bar 2) 0)
+                     [0 3/2 2 13/4]
+                     [0 1 5/2 7/2])]
+      (play :kick :c2 {:at (+ start offset) :dur 1/8}))
+
+    ;; Backbeat plus an occasional ghost hit before the bar turns over.
+    (play :snare :c4 {:at (+ start 1) :dur 1/4})
+    (play :snare :c4 {:at (+ start 3) :dur 1/4})
+    (if (= (mod bar 3) 2)
+      (play :snare :c4 {:at (+ start 11/4) :dur 1/8}))
+
+    ;; Constant eighth-note hats, with sixteenth-note fills every fourth bar.
+    (doseq [offset hat-steps]
+      (play :hat :c6 {:at (+ start offset) :dur 1/8}))
+    (if (= (mod bar 4) 3)
+      (do
+        (play :hat :c6 {:at (+ start 13/4) :dur 1/16})
+        (play :hat :c6 {:at (+ start 15/4) :dur 1/16})))
+
+    ;; Syncopated bass notes; the last hit jumps one octave for extra motion.
+    (play :acid-bass root {:at start :dur 3/4})
+    (play :acid-bass root {:at (+ start 3/2) :dur 1/4})
+    (play :acid-bass root {:at (+ start 2) :dur 1/2})
+    (play :acid-bass (+ (note-number root) 12)
+          {:at (+ start 13/4) :dur 1/2})
+
+    ;; Two short triads feed the delay network in every bar.
+    (doseq [pitch chord]
+      (play :laser-stab pitch {:at (+ start 1/2) :dur 1/4})
+      (play :laser-stab pitch {:at (+ start 5/2) :dur 1/4}))
+
+    ;; Long risers and short glitches mark phrase boundaries.
+    (if (= (mod bar 4) 0)
+      (play :noise-fx :c4 {:at start :dur 4}))
+    (if (= (mod bar 4) 3)
+      (do
+        (play :noise-fx :c5 {:at (+ start 3) :dur 1/4})
+        (play :noise-fx :c5 {:at (+ start 7/2) :dur 1/8})))))
