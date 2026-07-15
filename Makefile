@@ -1,7 +1,7 @@
 GO ?= go
 LGS := ./out/lgs
 
-.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-nrepl lint doctor render-fixtures analyze-fixtures acceptance clean
+.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-nrepl lint doctor render-fixtures analyze-fixtures acceptance clean
 bootstrap:
 	./scripts/bootstrap-fedora.sh
 
@@ -48,6 +48,11 @@ test-controls: build
 	cd third_party/sointu && $(GO) test ./vm
 	mkdir -p out/fixtures
 	$(LGS) render --input testdata/controls/exact-step.lg --output out/fixtures/control-step.wav --duration 2s --tail 0s --control-trace out/fixtures/control-step.json
+
+test-automation: build
+	$(GO) test ./internal/audio ./internal/lisp
+	mkdir -p out/fixtures
+	$(LGS) render --input testdata/automation/linear-ramp.lg --output out/fixtures/automation-ramp.wav --duration 2s --tail 0s --automation-trace out/fixtures/automation-ramp.json
 
 test-nrepl:
 	$(GO) test ./internal/nrepl

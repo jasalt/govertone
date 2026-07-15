@@ -155,7 +155,7 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 				if !ok {
 					return nil, &CompileError{[]Diagnostic{diag("control-binding-missing", instrument.ID, unitIndex, unit.ID, name, "Sointu control operand was not generated")}}
 				}
-				result.Bindings = append(result.Bindings, ControlBinding{Index: len(result.Bindings), InstrumentID: instrument.ID, ParameterID: reference.Parameter, UnitID: unit.ID, UnitIndex: unitIndex, UnitParameter: name, Operand: operand, Scope: descriptor.Scope, Minimum: descriptor.Minimum, Maximum: descriptor.Maximum, Default: descriptor.Default, Transform: reference.Transform})
+				result.Bindings = append(result.Bindings, ControlBinding{Index: len(result.Bindings), InstrumentID: instrument.ID, ParameterID: reference.Parameter, UnitID: unit.ID, UnitIndex: unitIndex, UnitParameter: name, Operand: operand, Scope: descriptor.Scope, Minimum: descriptor.Minimum, Maximum: descriptor.Maximum, Default: descriptor.Default, Smoothing: descriptor.Smoothing, Transform: reference.Transform})
 			}
 		}
 	}

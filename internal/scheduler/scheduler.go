@@ -30,8 +30,12 @@ func eventPriority(event Event) int {
 		return 3
 	case EventTrigger:
 		return 2
-	case EventStopAll:
+	case EventCancelAutomation:
+		return 3
+	case EventStartAutomation:
 		return 4
+	case EventStopAll:
+		return 5
 	default:
 		return 2
 	}

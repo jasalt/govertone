@@ -13,6 +13,8 @@ const (
 	EventSetTempo
 	EventStopAll
 	EventSetControl
+	EventStartAutomation
+	EventCancelAutomation
 )
 
 func (k EventKind) String() string {
@@ -27,26 +29,35 @@ func (k EventKind) String() string {
 		return "stop-all"
 	case EventSetControl:
 		return "set-control"
+	case EventStartAutomation:
+		return "start-automation"
+	case EventCancelAutomation:
+		return "cancel-automation"
 	default:
 		return "unknown"
 	}
 }
 
 type Event struct {
-	ID          uint64
-	Frame       clock.FrameIndex
-	Sequence    uint64
-	Kind        EventKind
-	Instrument  instruments.InstrumentID
-	Voice       instruments.VoiceID // generation-specific voice at scheduling time (diagnostics)
-	VoiceOffset int                 // stable offset within the symbolic instrument
-	Generation  uint64
-	Note        uint8
-	Tempo       float64
-	HandleID    uint64
-	Parameter   string
-	Value       float64
-	Reset       bool
+	ID           uint64
+	Frame        clock.FrameIndex
+	Sequence     uint64
+	Kind         EventKind
+	Instrument   instruments.InstrumentID
+	Voice        instruments.VoiceID // generation-specific voice at scheduling time (diagnostics)
+	VoiceOffset  int                 // stable offset within the symbolic instrument
+	Generation   uint64
+	Note         uint8
+	Tempo        float64
+	HandleID     uint64
+	Parameter    string
+	Value        float64
+	Reset        bool
+	AutomationID uint64
+	EndFrame     clock.FrameIndex
+	StartValue   float64
+	EndValue     float64
+	Curve        string
 }
 
 type TraceEvent struct {

@@ -1,0 +1,8 @@
+(defsynth automation-tone
+  {:voices 2
+   :params {:level {:default 20 :min 1 :max 128}}}
+  (oscillator {:type :sine})
+  (out {:gain (param :level)}))
+
+(play :automation-tone :a4 {:at 0 :dur 4})
+(ramp :automation-tone :level 20 100 {:at 0 :dur 2 :curve :linear})

@@ -84,6 +84,7 @@ func renderCommand(args []string) int {
 	trace := fs.String("event-trace", "", "event trace JSON output")
 	patchTrace := fs.String("patch-trace", "", "patch update trace JSON output")
 	controlTrace := fs.String("control-trace", "", "control event trace JSON output")
+	automationTrace := fs.String("automation-trace", "", "automation lane trace JSON output")
 	_, level, _ := common(fs)
 	if fs.Parse(args) != nil {
 		return 2
@@ -143,6 +144,12 @@ func renderCommand(args []string) int {
 	}
 	if *controlTrace != "" {
 		if err = writeJSON(*controlTrace, a.Engine.ControlTrace()); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 5
+		}
+	}
+	if *automationTrace != "" {
+		if err = writeJSON(*automationTrace, a.Engine.AutomationTrace()); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 5
 		}
