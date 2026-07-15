@@ -757,7 +757,11 @@ func (r *Runtime) synthInfoFn(args []vm.Value) (vm.Value, error) {
 		return vm.NIL, fmt.Errorf("unknown synth :%s", id)
 	}
 	spec, _ := r.patchRegistry.Definition(id)
-	return mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("instrument-index"), vm.Int(in.Index), vm.Keyword("first-voice"), vm.Int(in.FirstVoice), vm.Keyword("unit-count"), vm.Int(len(spec.Units)), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source), vm.Keyword("units"), instrumentToVM(spec).(*vm.PersistentMap).ValueAt(vm.Keyword("units"))), nil
+	parameters, err := r.controlsFn([]vm.Value{vm.Keyword(id)})
+	if err != nil {
+		return vm.NIL, err
+	}
+	return mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("instrument-index"), vm.Int(in.Index), vm.Keyword("first-voice"), vm.Int(in.FirstVoice), vm.Keyword("unit-count"), vm.Int(len(spec.Units)), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source), vm.Keyword("parameters"), parameters, vm.Keyword("units"), instrumentToVM(spec).(*vm.PersistentMap).ValueAt(vm.Keyword("units"))), nil
 }
 func (r *Runtime) removeSynthFn(args []vm.Value) (vm.Value, error) {
 	if len(args) != 1 {

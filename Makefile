@@ -43,9 +43,11 @@ test-patch: build
 	! $(LGS) patch validate --input testdata/synths/invalid-stack.lg
 	! $(LGS) patch validate --input testdata/synths/invalid-routing.lg
 
-test-controls:
+test-controls: build
 	$(GO) test ./internal/patch ./internal/audio ./internal/lisp
 	cd third_party/sointu && $(GO) test ./vm
+	mkdir -p out/fixtures
+	$(LGS) render --input testdata/controls/exact-step.lg --output out/fixtures/control-step.wav --duration 2s --tail 0s --control-trace out/fixtures/control-step.json
 
 test-nrepl:
 	$(GO) test ./internal/nrepl

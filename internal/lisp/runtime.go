@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"sort"
 	"strings"
 	"sync"
 
@@ -90,6 +91,9 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 	}
 	if err := r.installPatchBindings(); err != nil {
 		return nil, fmt.Errorf("install patch DSL: %w", err)
+	}
+	if err := r.installControlBindings(); err != nil {
+		return nil, fmt.Errorf("install control API: %w", err)
 	}
 	return r, nil
 }
@@ -330,6 +334,7 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 		start = *r.atBeat
 	}
 	var dur *clock.Beat
+	noteParameters := map[patchmodel.ParameterID]float64{}
 	if len(args) == 3 {
 		opts, ok := args[2].(*vm.PersistentMap)
 		if !ok {
@@ -351,6 +356,34 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 				return vm.NIL, fmt.Errorf(":dur must be positive")
 			}
 			dur = &b
+		}
+		if v := opts.ValueAt(vm.Keyword("params")); v != vm.NIL {
+			entries, e := mapEntries(v)
+			if e != nil {
+				return vm.NIL, fmt.Errorf("play :params: %w", e)
+			}
+			definition, exists := r.patchRegistry.Definition(id)
+			if !exists {
+				return vm.NIL, fmt.Errorf("unknown instrument :%s", id)
+			}
+			for rawID, rawValue := range entries {
+				parameterID := patchmodel.ParameterID(rawID)
+				descriptor, exists := definition.Parameters[parameterID]
+				if !exists {
+					return vm.NIL, fmt.Errorf("unknown-control: synth :%s has no parameter :%s", id, parameterID)
+				}
+				if descriptor.Scope != patchmodel.ScopeVoice {
+					return vm.NIL, fmt.Errorf("control-scope-mismatch: play :params parameter :%s is instrument scoped", parameterID)
+				}
+				value, e := numValue(rawValue)
+				if e != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+					return vm.NIL, fmt.Errorf("invalid-control-value: play :params :%s must be finite", parameterID)
+				}
+				if value < descriptor.Minimum || value > descriptor.Maximum {
+					return vm.NIL, fmt.Errorf("control-out-of-range: :%s requires %g..%g, got %g", parameterID, descriptor.Minimum, descriptor.Maximum, value)
+				}
+				noteParameters[parameterID] = value
+			}
 		}
 	}
 	if start.Sign() < 0 {
@@ -389,6 +422,19 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 	}
 	if _, err = r.queue.Add(r.noteEvent(startFrame, scheduler.EventTrigger, h)); err != nil {
 		return vm.NIL, err
+	}
+	parameterIDs := make([]string, 0, len(noteParameters))
+	for parameterID := range noteParameters {
+		parameterIDs = append(parameterIDs, string(parameterID))
+	}
+	sort.Strings(parameterIDs)
+	for _, rawID := range parameterIDs {
+		event := r.noteEvent(startFrame, scheduler.EventSetControl, h)
+		event.Parameter = rawID
+		event.Value = noteParameters[patchmodel.ParameterID(rawID)]
+		if _, err = r.queue.Add(event); err != nil {
+			return vm.NIL, fmt.Errorf("control-queue-full: %w", err)
+		}
 	}
 	if dur != nil {
 		if _, err = r.queue.Add(r.noteEvent(endFrame, scheduler.EventRelease, h)); err != nil {
