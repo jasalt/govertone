@@ -1,0 +1,105 @@
+;; A compact (and sloppy) arrangement of the Game of Thrones main-title
+;; theme using the built-in lead, bass, and sine instruments.
+;;
+;; Render it with:
+;;   ./out/lgs render --input examples/game-of-thrones-theme.lg \
+;;     --output out/game-of-thrones-theme.wav --duration 38s --tail 2s
+;;
+;; Note, this does not work with REPL as is, timing is hard coded.
+
+(tempo 90)
+
+;; Low cello-like roots, one per six-beat phrase.
+(play :bass :c2  {:at 0  :dur 6})
+(play :bass :c2  {:at 6  :dur 6})
+(play :bass :c2  {:at 12 :dur 6})
+(play :bass :c2  {:at 18 :dur 6})
+(play :bass :ab1 {:at 24 :dur 6})
+(play :bass :ab1 {:at 30 :dur 6})
+(play :bass :db2 {:at 36 :dur 6})
+(play :bass :eb2 {:at 42 :dur 6})
+(play :bass :c2  {:at 48 :dur 8})
+
+;; Quiet sustained harmony.
+(play :sine :c3  {:at 0  :dur 12})
+(play :sine :eb3 {:at 0  :dur 12})
+(play :sine :g3  {:at 0  :dur 12})
+
+(play :sine :c3  {:at 12 :dur 12})
+(play :sine :e3  {:at 12 :dur 12})
+(play :sine :g3  {:at 12 :dur 12})
+
+(play :sine :ab2 {:at 24 :dur 12})
+(play :sine :c3  {:at 24 :dur 12})
+(play :sine :eb3 {:at 24 :dur 12})
+
+(play :sine :db3 {:at 36 :dur 6})
+(play :sine :f3  {:at 36 :dur 6})
+(play :sine :ab3 {:at 36 :dur 6})
+
+(play :sine :eb3 {:at 42 :dur 6})
+(play :sine :g3  {:at 42 :dur 6})
+(play :sine :bb3 {:at 42 :dur 6})
+
+(play :sine :c3  {:at 48 :dur 8})
+(play :sine :eb3 {:at 48 :dur 8})
+(play :sine :g3  {:at 48 :dur 8})
+
+;; Main minor-key motif.
+(play :lead :g4  {:at 0   :dur 3/2})
+(play :lead :c4  {:at 3/2 :dur 3/2})
+(play :lead :eb4 {:at 3   :dur 1/2})
+(play :lead :f4  {:at 7/2 :dur 1/2})
+(play :lead :g4  {:at 4   :dur 2})
+
+(play :lead :g4  {:at 6    :dur 3/2})
+(play :lead :c4  {:at 15/2 :dur 3/2})
+(play :lead :eb4 {:at 9    :dur 1/2})
+(play :lead :f4  {:at 19/2 :dur 1/2})
+(play :lead :g4  {:at 10   :dur 2})
+
+;; The characteristic major-third variation.
+(play :lead :g4 {:at 12   :dur 3/2})
+(play :lead :c4 {:at 27/2 :dur 3/2})
+(play :lead :e4 {:at 15   :dur 1/2})
+(play :lead :f4 {:at 31/2 :dur 1/2})
+(play :lead :g4 {:at 16   :dur 2})
+
+(play :lead :g4 {:at 18   :dur 3/2})
+(play :lead :c4 {:at 39/2 :dur 3/2})
+(play :lead :e4 {:at 21   :dur 1/2})
+(play :lead :f4 {:at 43/2 :dur 1/2})
+(play :lead :g4 {:at 22   :dur 2})
+
+;; Lift the same shape into the upper register.
+(play :lead :c5  {:at 24   :dur 3/2})
+(play :lead :g4  {:at 51/2 :dur 3/2})
+(play :lead :ab4 {:at 27   :dur 1/2})
+(play :lead :bb4 {:at 55/2 :dur 1/2})
+(play :lead :c5  {:at 28   :dur 2})
+
+(play :lead :c5  {:at 30   :dur 3/2})
+(play :lead :g4  {:at 63/2 :dur 3/2})
+(play :lead :ab4 {:at 33   :dur 1/2})
+(play :lead :bb4 {:at 67/2 :dur 1/2})
+(play :lead :c5  {:at 34   :dur 2})
+
+;; Two climbing phrases lead back home.
+(play :lead :ab4 {:at 36   :dur 3/2})
+(play :lead :db4 {:at 75/2 :dur 3/2})
+(play :lead :f4  {:at 39   :dur 1/2})
+(play :lead :g4  {:at 79/2 :dur 1/2})
+(play :lead :ab4 {:at 40   :dur 2})
+
+(play :lead :bb4 {:at 42   :dur 3/2})
+(play :lead :eb4 {:at 87/2 :dur 3/2})
+(play :lead :g4  {:at 45   :dur 1/2})
+(play :lead :ab4 {:at 91/2 :dur 1/2})
+(play :lead :bb4 {:at 46   :dur 2})
+
+;; Final statement and held tonic.
+(play :lead :g4  {:at 48    :dur 3/2})
+(play :lead :c4  {:at 99/2  :dur 3/2})
+(play :lead :eb4 {:at 51    :dur 1/2})
+(play :lead :f4  {:at 103/2 :dur 1/2})
+(play :lead :c5  {:at 52    :dur 4})
