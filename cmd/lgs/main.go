@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,6 +18,7 @@ import (
 	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/audio"
 	"github.com/example/letgo-sointu/internal/clock"
+	musicnrepl "github.com/example/letgo-sointu/internal/nrepl"
 )
 
 const (
@@ -262,6 +264,9 @@ func replCommand(args []string) int {
 	fs := flag.NewFlagSet("repl", flag.ContinueOnError)
 	noAudio, level, _ := common(fs)
 	tail := fs.Duration("tail", 2*time.Second, "shutdown release tail")
+	nreplPort := fs.Int("nrepl", -1, "enable nREPL on port (0 chooses an available port)")
+	nreplBind := fs.String("nrepl-bind", "127.0.0.1", "nREPL bind address")
+	nreplPortFile := fs.Bool("nrepl-port-file", true, "write .nrepl-port while nREPL is running")
 	if fs.Parse(args) != nil {
 		return 2
 	}
@@ -273,6 +278,10 @@ func replCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "repl --tail must be between 0 and 2s")
 		return 2
 	}
+	if *nreplPort < -1 || *nreplPort > 65535 {
+		fmt.Fprintln(os.Stderr, "repl --nrepl must be between 0 and 65535")
+		return 2
+	}
 	a, err := app.New(os.Stdout, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -280,6 +289,19 @@ func replCommand(args []string) int {
 	}
 	defer a.Close()
 	fmt.Fprintf(os.Stderr, "lgs %s; Sointu patch %s\n", version, a.Provider.Fingerprint())
+	var nreplServer *musicnrepl.Server
+	if *nreplPort >= 0 {
+		if !loopbackAddress(*nreplBind) {
+			fmt.Fprintf(os.Stderr, "WARNING: nREPL is binding to non-loopback address %s without authentication or TLS\n", *nreplBind)
+		}
+		nreplServer = musicnrepl.New(a.Lisp, musicnrepl.Config{Bind: *nreplBind, Port: *nreplPort, WritePortFile: *nreplPortFile})
+		if err = nreplServer.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		defer nreplServer.Stop()
+		fmt.Fprintf(os.Stderr, "nREPL listening on %s\n", nreplServer.Addr())
+	}
 	var rt *audio.Realtime
 	if !*noAudio {
 		rt, err = audio.StartRealtime(a.Engine)
@@ -320,6 +342,14 @@ func replCommand(args []string) int {
 	fmt.Fprintf(os.Stderr, "frames=%d queue_high_water=%d voices_high_water=%d underruns=%d late=%d dropped=%d max_render=%s\n", stats.FramesRendered, stats.MaxSchedulerDepth, stats.ActiveVoiceHighWater, stats.Underruns, stats.LateEvents, stats.DroppedEvents, stats.MaxRenderDuration)
 	return 0
 }
+func loopbackAddress(address string) bool {
+	if address == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(address)
+	return ip != nil && ip.IsLoopback()
+}
+
 func doctorCommand(args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	noAudio, level, _ := common(fs)
