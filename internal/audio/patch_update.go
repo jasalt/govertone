@@ -66,14 +66,16 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 	}
 	e.layout = make(map[patchmodel.InstrumentID]instruments.Definition, len(compiled.Layout.Instruments))
 	e.controls = newControlState(compiled)
+	e.hardReleaseOperands = newHardReleaseOperands(compiled)
 	e.automation = newAutomationState()
 	for id, instrument := range compiled.Layout.Instruments {
 		e.layout[id] = instruments.Definition{ID: id, FirstVoice: instruments.VoiceID(instrument.FirstVoice), Voices: instrument.NumVoices}
 	}
-	for i, owner := range e.owners {
+	e.initializeHardReleaseControls()
+	for voice, owner := range e.owners {
 		if owner != 0 {
-			e.synth.Release(i)
-			e.owners[i] = 0
+			e.releaseVoice(voice, e.instrumentAtVoice(voice))
+			e.owners[voice] = 0
 			invalidated++
 		}
 	}

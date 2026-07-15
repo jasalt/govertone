@@ -40,6 +40,63 @@ func newControlState(compiled *patchmodel.CompiledPatch) *controlState {
 	return state
 }
 
+func newHardReleaseOperands(compiled *patchmodel.CompiledPatch) map[patchmodel.InstrumentID][]int {
+	result := map[patchmodel.InstrumentID][]int{}
+	if compiled == nil {
+		return result
+	}
+	for id, instrument := range compiled.Layout.Instruments {
+		if len(instrument.HardReleaseOperands) > 0 {
+			result[id] = append([]int(nil), instrument.HardReleaseOperands...)
+		}
+	}
+	return result
+}
+
+func (e *Engine) initializeHardReleaseControls() {
+	vmSynth, ok := e.synth.(controlledSynth)
+	if !ok {
+		return
+	}
+	for id, operands := range e.hardReleaseOperands {
+		definition, exists := e.layout[id]
+		if !exists {
+			continue
+		}
+		first := int(definition.FirstVoice)
+		for voice := first; voice < first+definition.Voices; voice++ {
+			for _, operand := range operands {
+				_ = vmSynth.SetControl(voice, operand, 0)
+			}
+		}
+	}
+}
+
+func (e *Engine) releaseVoice(voice int, instrument patchmodel.InstrumentID) {
+	e.synth.Release(voice)
+	vmSynth, ok := e.synth.(controlledSynth)
+	if !ok {
+		return
+	}
+	// Sointu note-off is consumed by envelope units. A synth without an
+	// envelope needs an output-gain override so a released oscillator does not
+	// run forever. Trigger clears this per-voice override before note controls
+	// are applied, making the voice reusable.
+	for _, operand := range e.hardReleaseOperands[instrument] {
+		_ = vmSynth.SetControl(voice, operand, 0)
+	}
+}
+
+func (e *Engine) instrumentAtVoice(voice int) patchmodel.InstrumentID {
+	for id, definition := range e.layout {
+		first := int(definition.FirstVoice)
+		if voice >= first && voice < first+definition.Voices {
+			return id
+		}
+	}
+	return ""
+}
+
 func transformedControl(binding patchmodel.ControlBinding, value float64) (float32, error) {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return 0, fmt.Errorf("invalid-control-value: control value must be finite")

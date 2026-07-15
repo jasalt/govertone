@@ -37,6 +37,22 @@ func TestCompileMinimalAndLayout(t *testing.T) {
 		t.Fatalf("defaults not normalized: %#v", compiled.Patch[0].Units[1])
 	}
 }
+
+func TestCompileHardReleaseOperandsOnlyWithoutEnvelope(t *testing.T) {
+	compiler := NewCompiler()
+	ungated, _ := NewInstrument("ungated", 1, mustUnit(t, "oscillator", nil), mustUnit(t, "out", nil))
+	gated := minimal(t, "gated", "sine", 1)
+	compiled, err := compiler.Compile(PatchSpec{Instruments: []InstrumentSpec{ungated, gated}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compiled.Layout.Instruments["ungated"].HardReleaseOperands; len(got) != 1 {
+		t.Fatalf("ungated hard-release operands = %v, want one output gain", got)
+	}
+	if got := compiled.Layout.Instruments["gated"].HardReleaseOperands; len(got) != 0 {
+		t.Fatalf("enveloped synth has hard-release operands %v", got)
+	}
+}
 func TestCompilerDiagnostics(t *testing.T) {
 	c := NewCompiler()
 	cases := []struct {

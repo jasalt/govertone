@@ -18,6 +18,8 @@ The macro installs the candidate and binds `soft-lead` to a printable synth desc
 
 Reevaluation retains the first-registration position. A changed aggregate increments the generation exactly once. Byte-identical normalized definitions are elided and return `:changed false`. Failed construction, stack analysis, routing, upstream compilation, or update leaves the prior registry generation and var value intact.
 
+Sointu envelopes consume note-off events and produce release tails. If a synth has no enabled `envelope`, govertone instead hard-mutes its per-voice `out`, `outaux`, and `aux` gains at note-off; the next trigger restores them before applying note parameters. Thus both `:dur` and `release` stop a bare oscillator. Add an `envelope` and combine it with the signal when an audible release tail is wanted.
+
 ## Low-level API
 
 Constructors are available unqualified in `music.core` and qualified in `music.patch`:
