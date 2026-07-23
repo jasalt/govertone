@@ -8,10 +8,12 @@ Please enable the audio on the video viewer for full enjoyment.
 
 ### Audio examples rendered by lgs
 
-**Game of Thrones theme** ([source](examples/game-of-thrones-theme.lg))  
+**Game of Thrones theme** ([source](examples/game-of-thrones-theme.lg))
+
 <audio controls src="examples/audio/game-of-thrones-theme.mp3"></audio>
 
-**Hectic electronic beat** ([source](examples/hectic-electronic-beat.lg))  
+**Hectic electronic beat** ([source](examples/hectic-electronic-beat.lg))
+
 <audio controls src="examples/audio/hectic-electronic-beat.mp3"></audio>
 
 ## Background
