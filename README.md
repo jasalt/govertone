@@ -8,13 +8,16 @@ Please enable the audio on the video viewer for full enjoyment.
 
 ### Audio examples rendered by lgs
 
+Sequencing and other features are in progress so composition source code is not most REPL friendly but works for now for audio demo purposes.
+
 **Game of Thrones theme** ([source](examples/game-of-thrones-theme.lg))
 
-<audio controls src="examples/audio/game-of-thrones-theme.mp3"></audio>
+[game-of-thrones-theme.mp3](https://github.com/user-attachments/files/30309929/game-of-thrones-theme.mp3)
+
 
 **Hectic electronic beat** ([source](examples/hectic-electronic-beat.lg))
 
-<audio controls src="examples/audio/hectic-electronic-beat.mp3"></audio>
+[hectic-electronic-beat.mp3](https://github.com/user-attachments/files/30309935/hectic-electronic-beat.mp3)
 
 ## Background
 
