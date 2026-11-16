@@ -197,6 +197,7 @@ The operational subcommands accept `--log-level error|warn|info|debug` and `--js
 - [unit reference](docs/unit-reference.md)
 - [patch lifecycle](docs/patch-lifecycle.md)
 - [patch transitions and their CPU cost](docs/patch-transitions.md)
+- [Phase 3 baseline and controlled-Sointu feasibility](docs/phase3-baseline.md)
 - [patch errors](docs/patch-errors.md)
 - [Sointu restrictions and workarounds](docs/sointu-restrictions.md)
 - [audio validation](docs/audio-validation.md)
