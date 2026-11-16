@@ -32,7 +32,7 @@ Content within this heading is (probably) the only human written text in the pro
 
 ## Progress (Phase 3 in progress)
 
-Phase 1 established the deterministic runtime, scheduler, fixed instruments, and audio validation. Phase 2 added typed patch construction, transactional live redefinition, symbolic routing, and `defsynth`. Phase 3 currently adds named instrument/voice parameters, persistent non-recompiling controls, exact-frame smoothing and automation, and bounded loopback-safe nREPL access, control buses, change classification with symbolic control migration, and crossfaded patch transitions. MIDI remains Phase 3 work. The `phase1` Git tag identifies the completed Phase 1 baseline.
+Phase 1 established the deterministic runtime, scheduler, fixed instruments, and audio validation. Phase 2 added typed patch construction, transactional live redefinition, symbolic routing, and `defsynth`. Phase 3 currently adds named instrument/voice parameters, persistent non-recompiling controls, exact-frame smoothing and automation, and bounded loopback-safe nREPL access, control buses, change classification with symbolic control migration, crossfaded patch transitions, and MIDI note, CC and pitch-bend bindings with deterministic replay. The ALSA sequencer backend is untested on real hardware. The `phase1` Git tag identifies the completed Phase 1 baseline.
 
 ## Fedora 44 setup
 
@@ -177,6 +177,7 @@ python3 scripts/validate-audio.py --input out/dynamic-synth.wav
 * `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE] [--patch-trace FILE] [--control-trace FILE] [--automation-trace FILE] [--then FILE --then-at DURATION]`
 * `lgs analyze --input FILE [--report FILE]`
 * `lgs patch <compile|validate|inspect> --input FILE [--report FILE] [--format json]`
+* `lgs midi list [--json]`, `lgs midi monitor --device NAME`, `lgs midi replay --input FILE --program FILE --output FILE --duration DURATION`
 * `lgs doctor [--no-audio]`
 * `lgs version`
 
@@ -187,6 +188,7 @@ The operational subcommands accept `--log-level error|warn|info|debug` and `--js
 - [REPL API](docs/repl-api.md)
 - [named controls and per-note parameters](docs/controls.md)
 - [smoothing and automation](docs/automation.md)
+- [MIDI input, bindings and replay](docs/midi.md)
 - [nREPL and editor integration](docs/nrepl.md)
 - [patch DSL](docs/patch-dsl.md)
 - [unit reference](docs/unit-reference.md)
@@ -205,9 +207,9 @@ The operational subcommands accept `--log-level error|warn|info|debug` and `--js
 
 - A redefinition that changes a synth's structure (units, voice count, added or removed synths) releases every sounding note, including notes on unchanged synths, and crossfades their tails out over 20 ms. Only value-only changes keep notes sounding. See [patch lifecycle](docs/patch-lifecycle.md#change-classes-and-strategy).
 - One Sointu VM holds 32 voices, and each instrument at most 63 encoded units. `lgs` splits patches across up to 16 VMs (128 voices per synth, 256 per patch), but synths coupled through `aux`/`in`/cross-synth `send` must fit in one VM. See [the restrictions and workarounds guide](docs/sointu-restrictions.md).
-- Named controls, per-note values, smoothing, and built-in automation curves are supported. Control buses and arbitrary user-defined audio-rate automation functions are not.
+- Named controls, per-note values, smoothing, and built-in automation curves are supported. Control buses map to instrument-scoped parameters only. Arbitrary user-defined audio-rate automation functions are not supported.
 - Only stereo output at 44.1 kHz is supported. There is no sample-library management, disk streaming, microphone input, or multichannel output.
-- There is no MIDI, OSC, pattern language, swing/groove engine, tempo ramp, plugin system, native controlled export, WebAssembly controlled export, or arbitrary user-defined DSP opcode support.
+- MIDI covers notes, CC and pitch bend only: no program change, aftertouch, sysex, MIDI clock or Standard MIDI Files, and the ALSA backend has not yet been tried on real hardware. There is no OSC, pattern language, swing/groove engine, tempo ramp, plugin system, native controlled export, WebAssembly controlled export, or arbitrary user-defined DSP opcode support.
 - nREPL has no authentication or TLS and therefore binds to loopback by default. The pinned let-go evaluator does not expose preemptive cancellation or nREPL stdin consumption; these limitations are documented in [docs/nrepl.md](docs/nrepl.md).
 - A tempo change affects subsequently converted beat positions but does not retimestamp events already materialized as frames.
 - Real-time Linux output requires a CGO-enabled build, ALSA development files, and an available PipeWire/ALSA sink. Offline rendering, patch compilation, and analysis remain fully headless.
