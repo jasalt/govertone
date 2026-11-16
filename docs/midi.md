@@ -66,6 +66,8 @@ action and note handle.
 (midi-disconnect! "USB Keys")
 ```
 
+`lgs render --midi-trace FILE` writes the MIDI dispatch trace and statistics for programs that call `midi-replay!`.
+
 `lgs repl --midi auto` connects every input at startup, and `--midi "USB Keys"` connects one. `--midi-latency 5ms` sets the latency. Without a backend or a device, the REPL prints why and starts anyway.
 
 Bindings match the device **name** as reported by `midi-devices`. When a

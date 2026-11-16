@@ -174,7 +174,7 @@ python3 scripts/validate-audio.py --input out/dynamic-synth.wav
 ## Commands
 
 * `lgs repl [--no-audio] [--tail 2s] [--midi none|auto|DEVICE] [--midi-latency 0s] [--nrepl PORT] [--nrepl-bind ADDRESS] [--nrepl-port-file=true|false]`
-* `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE] [--patch-trace FILE] [--control-trace FILE] [--automation-trace FILE] [--then FILE --then-at DURATION]`
+* `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE] [--patch-trace FILE] [--control-trace FILE] [--automation-trace FILE] [--midi-trace FILE] [--transition-trace FILE] [--then FILE --then-at DURATION]...`; `--then`/`--then-at` pairs repeat, in ascending order
 * `lgs analyze --input FILE [--report FILE]`
 * `lgs patch <compile|validate|inspect> --input FILE [--report FILE] [--format json]`
 * `lgs controls inspect --input FILE [--synth ID]` prints named parameters and their Sointu operand bindings as JSON
