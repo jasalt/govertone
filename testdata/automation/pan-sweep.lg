@@ -1,0 +1,13 @@
+; Phase 3 §27.4: a held sine panned from hard left to hard right over 3 s.
+; Energy must move monotonically from the left to the right channel
+; without clipping.
+(defsynth panner
+  {:voices 1 :params {:pan {:default 0 :min 0 :max 128}}}
+  (envelope {:attack 0 :decay 0 :sustain 128 :release 0})
+  (oscillator {:type :sine})
+  (mulp)
+  (pan {:panning (param :pan)})
+  (out {:gain 60}))
+
+(play :panner :a4 {:at 0 :dur 8})
+(ramp :panner :pan 0 128 {:at 1 :dur 6 :curve :linear})

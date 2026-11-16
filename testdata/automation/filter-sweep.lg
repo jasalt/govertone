@@ -1,0 +1,13 @@
+; Phase 3 §27.3: a held saw through a low-pass filter whose cutoff ramps
+; up over 3 s. The spectral centroid must rise across windows while the
+; pitch stays put.
+(defsynth sweep
+  {:voices 1 :params {:cutoff {:default 10 :min 0 :max 128}}}
+  (envelope {:attack 0 :decay 0 :sustain 128 :release 0})
+  (oscillator {:type :saw})
+  (mulp)
+  (filter {:type :lowpass :frequency (param :cutoff) :resonance 128})
+  (out {:gain 40}))
+
+(play :sweep :a2 {:at 0 :dur 8})
+(ramp :sweep :cutoff 10 100 {:at 1 :dur 6 :curve :linear})

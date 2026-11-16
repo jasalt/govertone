@@ -65,6 +65,10 @@ test-automation: build
 	$(LGS) render --input testdata/automation/linear-ramp.lg --output out/fixtures/automation-ramp.wav --duration 2s --tail 0s --automation-trace out/fixtures/automation-ramp.json
 	$(LGS) automation validate --input testdata/automation/linear-ramp.lg --duration 3s
 	! $(LGS) automation validate --input testdata/automation/stale-target.lg --duration 3s
+	$(LGS) render --input testdata/automation/filter-sweep.lg --output out/fixtures/filter-sweep.wav --duration 4s --tail 0s
+	python3 scripts/validate-sweep-fixture.py --kind filter --input out/fixtures/filter-sweep.wav --report out/fixtures/filter-sweep.json
+	$(LGS) render --input testdata/automation/pan-sweep.lg --output out/fixtures/pan-sweep.wav --duration 4s --tail 0s
+	python3 scripts/validate-sweep-fixture.py --kind pan --input out/fixtures/pan-sweep.wav --report out/fixtures/pan-sweep.json
 	$(LGS) controls inspect --input testdata/controls/exact-step.lg --synth control-step > out/fixtures/control-step-inspect.json
 
 test-nrepl:
