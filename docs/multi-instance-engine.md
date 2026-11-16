@@ -104,7 +104,7 @@ Mixing has two separate layers, and they stay separate.
 
 **Shard mixing happens inside the engine.** At each event-split segment, every shard renders the same frames into its preallocated float32 scratch buffer. The buffers are then summed in ascending shard order with unity gain. This matches how one Sointu VM already sums its voices into its output accumulator, so the result has no extra normalization or limiting. A single shard renders straight into `dst`. Exact-frame events, block-size invariance, and offline/real-time equivalence all depend on shard mixing staying here, inside `RenderBlock`.
 
-**Output goes through a sink.** `RenderBlock` produces one float32 stereo 44.1 kHz buffer for each callback. Sinks consume that buffer:
+**Output goes through a sink.** `RenderBlock` produces one float32 stereo 44.1 kHz buffer for each callback. Sinks consume that buffer. In code (`internal/audio/sink.go`), `*Engine` is the `Source`. Real-time sinks register by name with `RegisterSink` and are opened with `OpenSink`; `"oto"` is the default. `BufferSink` is the offline path behind `RenderOffline`:
 
 ```
 shards ──(exact-frame, float32, fixed order)──► Engine mix ──► Sink

@@ -4,10 +4,8 @@ package audio
 
 import "fmt"
 
-type Realtime struct{}
-
-func StartRealtime(*Engine) (*Realtime, error) {
-	return nil, fmt.Errorf("real-time audio backend requires a CGO-enabled build with ALSA development files")
+func init() {
+	RegisterSink("oto", func(Source) (Sink, error) {
+		return nil, fmt.Errorf("real-time audio backend requires a CGO-enabled build with ALSA development files")
+	})
 }
-func (*Realtime) Close() error { return nil }
-func (*Realtime) Wait()        {}

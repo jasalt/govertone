@@ -8,25 +8,9 @@ import (
 	"github.com/vsariola/sointu"
 )
 
+// RenderOffline renders frames of the engine's mixed output.
 func RenderOffline(engine *Engine, frames, blockSize int) (sointu.AudioBuffer, error) {
-	if frames < 0 {
-		return nil, fmt.Errorf("negative render length")
-	}
-	if blockSize <= 0 {
-		return nil, fmt.Errorf("block size must be positive")
-	}
-	out := make(sointu.AudioBuffer, frames)
-	for pos := 0; pos < frames; {
-		n := blockSize
-		if n > frames-pos {
-			n = frames - pos
-		}
-		if err := engine.RenderBlock(out[pos : pos+n]); err != nil {
-			return nil, fmt.Errorf("render at frame %d: %w", pos, err)
-		}
-		pos += n
-	}
-	return out, nil
+	return BufferSink(engine, frames, blockSize)
 }
 func ValidateSamples(buf sointu.AudioBuffer) error {
 	for i, s := range buf {

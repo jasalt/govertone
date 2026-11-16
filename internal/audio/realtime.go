@@ -4,37 +4,23 @@ package audio
 
 import (
 	"fmt"
-	"io"
 
 	"github.com/vsariola/sointu"
 	sointuoto "github.com/vsariola/sointu/oto"
 )
 
-type Realtime struct{ closer sointu.CloserWaiter }
+func init() { RegisterSink("oto", openOtoSink) }
 
-func StartRealtime(e *Engine) (*Realtime, error) {
+// otoSink plays the mixed engine output through Sointu's Oto player
+// (float32, 2048-frame player buffer).
+type otoSink struct{ closer sointu.CloserWaiter }
+
+func openOtoSink(source Source) (Sink, error) {
 	ctx, err := sointuoto.NewContext()
 	if err != nil {
 		return nil, fmt.Errorf("open audio output: %w", err)
 	}
-	c := ctx.Play(func(buf sointu.AudioBuffer) error {
-		if err := e.RenderBlock(buf); err != nil {
-			return err
-		}
-		return nil
-	})
-	return &Realtime{closer: c}, nil
+	return otoSink{closer: ctx.Play(source.RenderBlock)}, nil
 }
-func (r *Realtime) Close() error {
-	if r == nil || r.closer == nil {
-		return nil
-	}
-	return r.closer.Close()
-}
-func (r *Realtime) Wait() {
-	if r != nil && r.closer != nil {
-		r.closer.Wait()
-	}
-}
-
-var _ io.Closer = (*Realtime)(nil)
+func (s otoSink) Close() error { return s.closer.Close() }
+func (s otoSink) Wait()        { s.closer.Wait() }
