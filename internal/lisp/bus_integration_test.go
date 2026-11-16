@@ -133,3 +133,33 @@ func TestBusValueReachesAudio(t *testing.T) {
 		t.Fatalf("explicit 0 after unmap should silence, rms %g", r)
 	}
 }
+
+func TestBusDrivesSeveralSynthsAtExactFrames(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	evalAll(t, a, migrationTone, strings.Replace(migrationTone, "tone", "tone2", 1),
+		`(defbus mix {:default 0 :max 1})`,
+		`(map-control! mix :tone :level {:scale 100})`,
+		`(map-control! mix :tone2 :level {:scale -50 :offset 64})`,
+		`(bus-set! mix 1 {:at 1})`)
+	render(t, a, 22050) // frames 0..22049; beat 1 at 120 bpm is frame 22050
+	if controlValue(t, a, "tone", "level") != "0.0" || controlValue(t, a, "tone2", "level") != "64.0" {
+		t.Fatal("bus applied before its frame")
+	}
+	render(t, a, 1)
+	if controlValue(t, a, "tone", "level") != "100.0" || controlValue(t, a, "tone2", "level") != "14.0" {
+		t.Fatalf("after frame 22050: %s %s", controlValue(t, a, "tone", "level"), controlValue(t, a, "tone2", "level"))
+	}
+	var found bool
+	for _, event := range a.Engine.ControlTrace().Events {
+		if event.Kind == "set-bus" && event.Bus == "mix" {
+			found = event.ScheduledFrame == 22050 && event.AppliedFrame == 22050
+		}
+	}
+	if !found {
+		t.Fatalf("set-bus trace missing or late: %+v", a.Engine.ControlTrace().Events)
+	}
+}
