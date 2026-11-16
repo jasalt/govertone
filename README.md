@@ -22,7 +22,19 @@ Sequencing and other features are in progress so composition source code is not 
 
 #### NEW: Multi Sointu instance
 
-<TODO ADD LINKS HERE>
+**Hectic electronic beat v2** ([source](examples/hectic-electronic-beat-v2.lg)) — 16 sounds, 39 simultaneous notes.
+
+[hectic-electronic-beat-v2.mp3](examples/audio/hectic-electronic-beat-v2.mp3)
+
+**Game of Thrones theme v2** ([source](examples/game-of-thrones-theme-v2.lg)) — 12 sounds, 39 simultaneous notes.
+
+[game-of-thrones-theme-v2.mp3](examples/audio/game-of-thrones-theme-v2.mp3)
+
+**Ode to Joy orchestra** ([source](examples/ode-to-joy-orchestra.lg)) — 64 sounds across 16 orchestral sections, 256 simultaneous notes.
+
+[ode-to-joy-orchestra.mp3](examples/audio/ode-to-joy-orchestra.mp3)
+
+[Arrangement details, measurements and render commands](examples/multisound-songs.md).
 
 ## Background
 
