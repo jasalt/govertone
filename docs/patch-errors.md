@@ -38,3 +38,7 @@ The multi-VM planner ([multi-instance engine](multi-instance-engine.md)) adds th
 ## Update failures
 
 A candidate compiled by temporary Sointu can still theoretically fail `Synth.Update`; this reports `:patch-update-failed`, records a failed patch trace, and does not publish or commit its generation. Reevaluate a corrected definition; restarting the runtime is not required.
+
+## Transition requests
+
+`{:transition ...}` errors happen before any update, so the previous generation stays active. `unsafe-transition` means `:in-place` was requested but the change alters the Sointu state layout; the message names the synth and the reason, such as `voices 2 -> 3`. `invalid-transition` is an unknown value. `unsupported-transition` is `:crossfade`, which is not implemented yet.

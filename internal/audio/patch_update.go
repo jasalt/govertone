@@ -52,6 +52,8 @@ type PatchUpdateResult struct {
 	// update; the caller must then keep its allocator state.
 	PreservedHandles int
 	Changed          bool
+	// Strategy is the transition actually applied.
+	Strategy patchmodel.TransitionStrategy
 }
 
 // UpdatePatch is a synchronous acknowledgement protocol. All construction and
@@ -183,7 +185,7 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 		e.layout[id] = instruments.Definition{ID: id, FirstVoice: instruments.VoiceID(instrument.FirstVoice), Voices: instrument.NumVoices}
 	}
 	e.initializeHardReleaseControls(compiled)
-	result := PatchUpdateResult{Generation: compiled.Generation, AppliedFrame: frame, Changed: true}
+	result := PatchUpdateResult{Generation: compiled.Generation, AppliedFrame: frame, Changed: true, Strategy: patchmodel.TransitionStrategy(entry.Strategy)}
 	if preserve {
 		// Sounding voices of envelope-less instruments must stay audible.
 		for _, voice := range owned {

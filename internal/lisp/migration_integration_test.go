@@ -155,3 +155,43 @@ func rmsOf(frames [][2]float32) float64 {
 	}
 	return math.Sqrt(sum / float64(len(frames)))
 }
+
+func TestTransitionOverride(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	synth := func(transition, kind string, voices int) string {
+		opts := `:voices ` + strconv.Itoa(voices)
+		if transition != "" {
+			opts += ` :transition ` + transition
+		}
+		return `(:transition (defsynth pad {` + opts + `} (envelope {}) (oscillator {:type ` + kind + `}) (mulp) (out {})))`
+	}
+	for _, step := range []struct{ form, want string }{
+		{synth("", ":sine", 2), ":hard-swap"},
+		{synth("", ":sine", 2), ":no-op"},
+		{synth(":in-place", ":saw", 2), ":in-place"},
+		{synth(":hard", ":sine", 2), ":hard-swap"},
+		{synth(":auto", ":pulse", 2), ":in-place"},
+	} {
+		v, err := a.Lisp.Eval(step.form)
+		if err != nil || v.String() != step.want {
+			t.Fatalf("%s = %v, %v; want %s", step.form, v, err, step.want)
+		}
+	}
+	generation := a.Engine.PatchGeneration()
+	for form, want := range map[string]string{
+		synth(":in-place", ":sine", 3):  "unsafe-transition: :in-place requested but :pad voices 2 -> 3",
+		synth(":crossfade", ":sine", 2): "unsupported-transition",
+		synth(":bogus", ":sine", 2):     "invalid-transition",
+	} {
+		if _, err := a.Lisp.Eval(form); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: %v, want %q", form, err, want)
+		}
+	}
+	if a.Engine.PatchGeneration() != generation {
+		t.Fatal("a rejected transition changed the patch")
+	}
+}

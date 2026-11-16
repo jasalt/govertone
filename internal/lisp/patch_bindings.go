@@ -641,25 +641,61 @@ func layoutToVM(layout patchmodel.InstrumentLayout) vm.Value {
 	return mapOf(vm.Keyword("instruments"), vm.NewPersistentVector(values), vm.Keyword("total-voices"), vm.Int(layout.TotalVoices))
 }
 
-func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate) (patchmodel.PatchGeneration, bool, error) {
+// transitionOption parses {:transition :auto|:in-place|:hard} (phase-3.md
+// §17.3). :crossfade is reserved for #12 and rejected for now.
+func transitionOption(options map[string]vm.Value) (string, error) {
+	value := options["transition"]
+	if value == nil {
+		return "auto", nil
+	}
+	name, err := keywordName(value, "synth :transition")
+	if err != nil {
+		return "", err
+	}
+	switch name {
+	case "auto", "in-place", "hard":
+		return name, nil
+	case "crossfade":
+		return "", fmt.Errorf("unsupported-transition: :crossfade is not implemented yet; use :auto, :in-place, or :hard")
+	}
+	return "", fmt.Errorf("invalid-transition: :%s; expected :auto, :in-place, or :hard", name)
+}
+
+// installCandidate applies a prepared update. requested is "auto",
+// "in-place" (rejected unless the diff proves it safe), or "hard".
+func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate, requested string) (patchmodel.PatchGeneration, patchmodel.TransitionStrategy, error) {
 	if !update.Changed {
 		if err := r.patchRegistry.Commit(update); err != nil {
-			return update.BaseGeneration, false, err
+			return update.BaseGeneration, "", err
 		}
-		return update.BaseGeneration, false, nil
+		return update.BaseGeneration, patchmodel.TransitionNoOp, nil
 	}
 	diff := patchmodel.Diff(r.patchRegistry.Compiled(), update.Compiled)
-	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed, diff.Strategy)
+	strategy := diff.Strategy
+	switch requested {
+	case "hard":
+		strategy = patchmodel.TransitionHardSwap
+	case "in-place":
+		if strategy != patchmodel.TransitionInPlace {
+			reason := "instruments were added or removed"
+			for _, id := range diff.Incompatible {
+				reason = fmt.Sprintf(":%s %s", id, diff.Reasons[id])
+				break
+			}
+			return update.BaseGeneration, "", fmt.Errorf("unsafe-transition: :in-place requested but %s; use :auto or :hard", reason)
+		}
+	}
+	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed, strategy)
 	if err != nil {
-		return update.BaseGeneration, false, err
+		return update.BaseGeneration, "", err
 	}
 	if err = r.patchRegistry.Commit(update); err != nil {
-		return update.BaseGeneration, false, err
+		return update.BaseGeneration, "", err
 	}
-	if result.PreservedHandles > 0 {
+	if result.Strategy == patchmodel.TransitionInPlace {
 		// In-place update: the voice layout is unchanged and sounding
 		// notes keep their handles, so the allocator keeps its state.
-		return result.Generation, true, nil
+		return result.Generation, result.Strategy, nil
 	}
 	defs := map[instruments.InstrumentID]instruments.Definition{}
 	for _, id := range update.Compiled.Layout.OrderedIDs {
@@ -667,7 +703,7 @@ func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate) (p
 		defs[id] = instruments.Definition{ID: id, FirstVoice: instruments.VoiceID(in.FirstVoice), Voices: in.NumVoices}
 	}
 	r.allocator.Reset(defs, uint64(result.Generation))
-	return result.Generation, true, nil
+	return result.Generation, result.Strategy, nil
 }
 func (r *Runtime) installSynthFn(args []vm.Value) (vm.Value, error) {
 	if len(args) < 3 {
@@ -682,7 +718,12 @@ func (r *Runtime) installSynthFn(args []vm.Value) (vm.Value, error) {
 		return vm.NIL, err
 	}
 	spec.Metadata.Source.Namespace = "music.core"
-	if options, _ := mapEntries(args[1]); options != nil {
+	options, _ := mapEntries(args[1])
+	transition, err := transitionOption(options)
+	if err != nil {
+		return vm.NIL, err
+	}
+	if options != nil {
 		if explicit := options["id"]; explicit != nil {
 			id, e := keywordName(explicit, "synth :id")
 			if e != nil {
@@ -695,14 +736,14 @@ func (r *Runtime) installSynthFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, err
 	}
-	generation, changed, err := r.installCandidate(update)
+	generation, strategy, err := r.installCandidate(update, transition)
 	if err != nil {
 		return vm.NIL, err
 	}
-	return synthHandle(spec.ID, generation, spec.Voices, changed), nil
+	return synthHandle(spec.ID, generation, spec.Voices, strategy), nil
 }
-func synthHandle(id patchmodel.InstrumentID, generation patchmodel.PatchGeneration, voices int, changed bool) vm.Value {
-	return mapOf(vm.Keyword("music/type"), vm.Keyword("synth"), vm.Keyword("id"), vm.Keyword(id), vm.Keyword("generation"), vm.Int(generation), vm.Keyword("voices"), vm.Int(voices), vm.Keyword("changed"), vm.Boolean(changed))
+func synthHandle(id patchmodel.InstrumentID, generation patchmodel.PatchGeneration, voices int, strategy patchmodel.TransitionStrategy) vm.Value {
+	return mapOf(vm.Keyword("music/type"), vm.Keyword("synth"), vm.Keyword("id"), vm.Keyword(id), vm.Keyword("generation"), vm.Int(generation), vm.Keyword("voices"), vm.Int(voices), vm.Keyword("changed"), vm.Boolean(strategy != patchmodel.TransitionNoOp), vm.Keyword("transition"), vm.Keyword(strategy))
 }
 func (r *Runtime) installPatchFn(args []vm.Value) (vm.Value, error) {
 	if len(args) != 1 {
@@ -729,12 +770,12 @@ func (r *Runtime) installPatchFn(args []vm.Value) (vm.Value, error) {
 		order = append(order, in.ID)
 	}
 	update := &patchmodel.PreparedRegistryUpdate{BaseGeneration: current.Generation, Definitions: definitions, Order: order, Compiled: compiled, Changed: compiled.Fingerprint != current.Fingerprint, ChangedIDs: order}
-	generation, changed, err := r.installCandidate(update)
+	generation, strategy, err := r.installCandidate(update, "auto")
 	if err != nil {
 		return vm.NIL, err
 	}
 	compiled.Generation = generation
-	return compiledSummary(compiled, changed), nil
+	return compiledSummary(compiled, strategy != patchmodel.TransitionNoOp), nil
 }
 func (r *Runtime) synthsFn(args []vm.Value) (vm.Value, error) {
 	if len(args) != 0 {
@@ -785,7 +826,7 @@ func (r *Runtime) removeSynthFn(args []vm.Value) (vm.Value, error) {
 	if !update.Changed {
 		return mapOf(vm.Keyword("removed"), vm.FALSE, vm.Keyword("id"), vm.Keyword(id), vm.Keyword("generation"), vm.Int(update.BaseGeneration)), nil
 	}
-	generation, _, err := r.installCandidate(update)
+	generation, _, err := r.installCandidate(update, "auto")
 	if err != nil {
 		return vm.NIL, err
 	}
