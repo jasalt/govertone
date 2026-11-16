@@ -58,6 +58,29 @@ missing target) and `:queue-overflows` (the device's bounded input buffer was
 full). The trace (`--midi-trace`) lists every message with its source, frame,
 action, and either `handle` (a note's trigger event ID) or `event` (a control's event ID). Both match `id` in the scheduler trace (`--trace`).
 
+## Fedora setup
+
+MIDI input needs a cgo build, which links the ALSA sequencer. The packages come from `scripts/bootstrap-fedora.sh`:
+
+```bash
+sudo dnf install gcc pkgconf-pkg-config alsa-lib-devel pipewire-alsa
+CGO_ENABLED=1 go build -o lgs ./cmd/lgs
+./lgs doctor            # reports the MIDI backend and inputs
+./lgs midi list         # USB keyboards appear once plugged in
+```
+
+Without a keyboard, the `snd-virmidi` kernel module gives virtual ports. Send to them with `amidi` (package `alsa-utils`):
+
+```bash
+sudo modprobe snd-virmidi
+./lgs midi list                              # "Virtual Raw MIDI ..." ports
+./lgs repl --midi "Virtual Raw MIDI" &
+amidi -l                                     # find the matching hw:N,0,0
+amidi -p hw:1,0,0 -S '90 45 64'              # note-on A4, velocity 100
+```
+
+Your user must be able to open `/dev/snd/seq`. That is the default on Fedora desktops; elsewhere, add the user to the `audio` group. These steps follow the ALSA and Fedora documentation but have not yet been run on Fedora 44 hardware (see Backends below).
+
 ## Devices
 
 ```clojure
