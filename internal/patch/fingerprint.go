@@ -13,6 +13,10 @@ type canonicalInstrument struct {
 	ID     InstrumentID    `json:"id"`
 	Voices int             `json:"voices"`
 	Units  []canonicalUnit `json:"units"`
+	// Parameters holds the named control descriptors: a range or default
+	// change rebuilds control bindings even when the DSP is unchanged.
+	// omitempty keeps fingerprints of synths without params unchanged.
+	Parameters map[ParameterID]SynthParameter `json:"parameters,omitempty"`
 }
 type canonicalUnit struct {
 	ID         UnitID       `json:"id"`
@@ -25,7 +29,7 @@ type canonicalUnit struct {
 func canonical(spec PatchSpec) canonicalPatch {
 	p := canonicalPatch{Instruments: make([]canonicalInstrument, len(spec.Instruments))}
 	for i, in := range spec.Instruments {
-		ci := canonicalInstrument{ID: in.ID, Voices: in.Voices, Units: make([]canonicalUnit, len(in.Units))}
+		ci := canonicalInstrument{ID: in.ID, Voices: in.Voices, Units: make([]canonicalUnit, len(in.Units)), Parameters: in.Parameters}
 		for j, u := range in.Units {
 			ci.Units[j] = canonicalUnit{u.ID, u.Type, cloneParameters(u.Parameters), u.Stereo, u.Disabled}
 		}

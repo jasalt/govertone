@@ -44,6 +44,23 @@ func TestFingerprintDeterministic(t *testing.T) {
 		t.Fatalf("map order changed fingerprint %s %s", fa, fb)
 	}
 }
+func TestFingerprintCoversParameterDescriptors(t *testing.T) {
+	u, _ := NewUnit("oscillator", ParameterMap{"type": EnumParam("sine")})
+	plain, _ := NewInstrument("x", 1, u)
+	withParam := plain
+	withParam.Parameters = map[ParameterID]SynthParameter{"level": {ID: "level", Default: 10, Maximum: 100}}
+	narrower := plain
+	narrower.Parameters = map[ParameterID]SynthParameter{"level": {ID: "level", Default: 10, Maximum: 50}}
+	fp := func(in InstrumentSpec) string { f, _ := InstrumentFingerprint(in); return f }
+	if fp(withParam) == fp(narrower) || fp(plain) == fp(withParam) {
+		t.Fatal("parameter descriptor change did not change the fingerprint")
+	}
+	empty := plain
+	empty.Parameters = map[ParameterID]SynthParameter{}
+	if fp(plain) != fp(empty) {
+		t.Fatal("empty parameters changed the fingerprint")
+	}
+}
 func FuzzInstrumentID(f *testing.F) {
 	for _, s := range []string{"sine", "demo/lead", "", ":x"} {
 		f.Add(s)
