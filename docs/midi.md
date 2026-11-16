@@ -66,6 +66,8 @@ action and note handle.
 (midi-disconnect! "USB Keys")
 ```
 
+`lgs repl --midi auto` connects every input at startup, and `--midi "USB Keys"` connects one. `--midi-latency 5ms` sets the latency. Without a backend or a device, the REPL prints why and starts anyway.
+
 Bindings match the device **name** as reported by `midi-devices`. When a
 device is unplugged or disconnected, the notes it started are released at the
 current frame, notes it had scheduled but not started are cancelled, its

@@ -316,6 +316,8 @@ func replCommand(args []string) int {
 	nreplPort := fs.Int("nrepl", -1, "enable nREPL on port (0 chooses an available port)")
 	nreplBind := fs.String("nrepl-bind", "127.0.0.1", "nREPL bind address")
 	nreplPortFile := fs.Bool("nrepl-port-file", true, "write .nrepl-port while nREPL is running")
+	midiDevices := fs.String("midi", "none", "connect MIDI inputs at startup: none, auto (every input) or a device name")
+	midiLatency := fs.Duration("midi-latency", 0, "MIDI input latency to compensate (0..1s)")
 	if fs.Parse(args) != nil {
 		return 2
 	}
@@ -331,6 +333,10 @@ func replCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "repl --nrepl must be between 0 and 65535")
 		return 2
 	}
+	if *midiLatency < 0 || *midiLatency > time.Second {
+		fmt.Fprintln(os.Stderr, "repl --midi-latency must be between 0 and 1s")
+		return 2
+	}
 	a, err := app.New(os.Stdout, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -338,6 +344,7 @@ func replCommand(args []string) int {
 	}
 	defer a.Close()
 	fmt.Fprintf(os.Stderr, "lgs %s; Sointu patch %s\n", version, a.Provider.Fingerprint())
+	connectMIDI(a, *midiDevices, *midiLatency)
 	var nreplServer *musicnrepl.Server
 	if *nreplPort >= 0 {
 		if !loopbackAddress(*nreplBind) {
@@ -507,4 +514,43 @@ func checkMIDIReplay() error {
 		}
 	}
 	return fmt.Errorf("replayed note-on did not trigger at frame 1000")
+}
+
+// connectMIDI opens MIDI inputs for the REPL. Missing hardware or backend is
+// reported, never fatal: the REPL is useful without MIDI.
+func connectMIDI(a *app.App, which string, latency time.Duration) {
+	if which == "none" || which == "" {
+		return
+	}
+	options := fmt.Sprintf("{:latency %g}", latency.Seconds())
+	if which != "auto" {
+		connected, err := a.Lisp.Eval(fmt.Sprintf("(midi-connect! %q %s)", which, options))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "midi:", err)
+			return
+		}
+		fmt.Fprintln(os.Stderr, "midi: connected", connected)
+		return
+	}
+	backend, err := midiBackend()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "midi:", err)
+		return
+	}
+	devices, err := backend.Devices(context.Background())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "midi:", err)
+		return
+	}
+	if len(devices) == 0 {
+		fmt.Fprintln(os.Stderr, "midi: no input devices")
+	}
+	for _, device := range devices {
+		// Connect by ID: names need not be unique.
+		if _, err := a.Lisp.Eval(fmt.Sprintf("(midi-connect! %q %s)", device.ID, options)); err != nil {
+			fmt.Fprintf(os.Stderr, "midi: %s: %v\n", device.Name, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "midi: connected %s (%s)\n", device.Name, device.ID)
+		}
+	}
 }
