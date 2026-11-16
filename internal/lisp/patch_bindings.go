@@ -980,5 +980,17 @@ func (r *Runtime) transitionInfoFn(args []vm.Value) (vm.Value, error) {
 	if last.CrossfadeCurve != "" {
 		result = result.Assoc(vm.Keyword("curve"), vm.Keyword(last.CrossfadeCurve)).(*vm.PersistentMap)
 	}
+	if info.Cost.Blocks > 0 {
+		cost := info.Cost
+		result = result.Assoc(vm.Keyword("cost"), mapOf(vm.Keyword("blocks"), vm.Int(cost.Blocks),
+			vm.Keyword("render-ms"), vm.Float(float64(cost.RenderTime)/1e6), vm.Keyword("max-block-ms"), vm.Float(float64(cost.MaxBlockTime)/1e6),
+			vm.Keyword("budget-utilization"), vm.Float(cost.BudgetUtilization), vm.Keyword("over-budget-blocks"), vm.Int(cost.OverBudget))).(*vm.PersistentMap)
+	}
+	counts := make([]vm.Value, 0, 2*len(info.Strategies))
+	for strategy, n := range info.Strategies {
+		counts = append(counts, vm.Keyword(strategy), vm.Int(n))
+	}
+	result = result.Assoc(vm.Keyword("strategies"), mapOf(counts...)).(*vm.PersistentMap)
+	result = result.Assoc(vm.Keyword("warnings"), strings(info.Warnings)).(*vm.PersistentMap)
 	return result, nil
 }

@@ -44,6 +44,8 @@ The update strategy, recorded as `strategy` in the patch trace:
  :cancelled-automation [] :deactivated-mappings ["b -> tone:level"]}
 ```
 
+The map also has `:strategies` (counts of applied updates per strategy this session), `:warnings` (for example `"hard swap cut 2 sounding notes without a fade"`, or a crossfade that exceeded the real-time budget) and, after a crossfade, `:cost` with `:blocks`, `:render-ms`, `:max-block-ms`, `:budget-utilization` (slowest block's render time over its real-time duration) and `:over-budget-blocks` (blocks that would have underrun). Over-budget crossfades are reported, never rejected.
+
 `:active` is true while a crossfade is still rendering. `:reset-controls`, `:cancelled-automation` and `:deactivated-mappings` are the migration warnings; the patch trace (`--patch-trace`) records the same fields.
 
 `defsynth` options choose the transition:

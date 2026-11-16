@@ -123,7 +123,8 @@ func TestTransitionInfoReportsTheLastUpdate(t *testing.T) {
 	evalAll(t, a, `(defsynth tone {:voices 3} (oscillator {:type :sine}) (out {}))`)
 	info := func(key string) string {
 		t.Helper()
-		v, err := a.Lisp.Eval(`(` + key + ` (transition-info))`)
+		// key may open a nested lookup such as ":blocks (:cost".
+		v, err := a.Lisp.Eval(`(` + key + ` (transition-info))` + strings.Repeat(")", strings.Count(key, "(")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -144,5 +145,32 @@ func TestTransitionInfoReportsTheLastUpdate(t *testing.T) {
 	render(t, a, 1000)
 	if got := info(":active"); got != "false" {
 		t.Fatalf("active after the fade = %s", got)
+	}
+	// The fade's cost: two 512-frame blocks overlap frames 1000..1882.
+	if got := info(":blocks (:cost"); got != "2" {
+		t.Fatalf("cost blocks = %s", got)
+	}
+	if got := info(":budget-utilization (:cost"); got == "nil" || got == "0" {
+		t.Fatalf("budget utilization = %s", got)
+	}
+	if got := info(":crossfade (:strategies"); got == "nil" {
+		t.Fatalf("strategy counts: %s", info(":strategies"))
+	}
+	if got := info(":warnings"); got != "[]" {
+		t.Fatalf("warnings = %s", got)
+	}
+	// A hard swap over a sounding note is warned about.
+	evalAll(t, a, `(play :tone :a4 {:dur 64})`)
+	render(t, a, 512)
+	evalAll(t, a, `(defsynth tone {:voices 2 :transition :hard} (oscillator {:type :sine}) (out {}))`)
+	render(t, a, 512)
+	if got := info(":warnings"); !strings.Contains(got, "hard swap cut 1 sounding notes") {
+		t.Fatalf("warnings = %s", got)
+	}
+	if got := info(":hard-swap (:strategies"); got != "1" {
+		t.Fatalf("strategy counts: %s", info(":strategies"))
+	}
+	if got := info(":cost"); got != "nil" {
+		t.Fatalf("a hard swap has no fade cost: %s", got)
 	}
 }

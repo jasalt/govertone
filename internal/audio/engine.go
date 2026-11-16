@@ -63,6 +63,9 @@ type Engine struct {
 	mappedBy map[controlKey]BusID
 	// fade holds VMs replaced by a crossfaded update while they fade out.
 	fade *fadingEngine
+	// fadeCost measures blocks rendered while a fade runs (phase-3.md
+	// §18.7). It is reset by each crossfade and written under renderMu.
+	fadeCost transitionCost
 }
 
 func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm float64) (*Engine, error) {
@@ -133,8 +136,12 @@ func (e *Engine) RenderBlock(dst sointu.AudioBuffer) error {
 	e.renderMu.Lock()
 	defer e.renderMu.Unlock()
 	started := time.Now()
+	fading := e.fade != nil
 	defer func() {
 		d := time.Since(started).Nanoseconds()
+		if fading {
+			e.fadeCost.record(d, int64(len(dst))*int64(time.Second)/clock.SampleRate)
+		}
 		for {
 			old := e.maxRender.Load()
 			if d <= old || e.maxRender.CompareAndSwap(old, d) {

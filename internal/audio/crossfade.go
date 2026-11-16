@@ -3,6 +3,8 @@ package audio
 import (
 	"fmt"
 	"math"
+	"sync/atomic"
+	"time"
 
 	"github.com/example/letgo-sointu/internal/instruments"
 	patchmodel "github.com/example/letgo-sointu/internal/patch"
@@ -135,6 +137,7 @@ func (e *Engine) crossfadePatch(compiled *patchmodel.CompiledPatch, bpm float64,
 	if scratch != nil {
 		e.scratch = scratch
 	}
+	e.fadeCost.reset()
 	e.fade = &fadingEngine{shards: e.shards, start: frame, frames: fade.Frames, linear: curve == "linear", buf: buf}
 	e.shards = fresh
 	e.voiceMap = compiled.VoiceMap
@@ -164,20 +167,83 @@ type TransitionInfo struct {
 	StartFrame    uint64
 	EndFrame      uint64
 	HasTransition bool
+	// Cost of the last crossfade so far; zero for other strategies.
+	Cost TransitionCost
+	// Strategies counts applied updates by strategy over the session.
+	Strategies map[string]int
+	// Warnings explain lossy or costly transitions in words.
+	Warnings []string
+}
+
+// TransitionCost is the render cost of the blocks rendered during a fade.
+// Budget utilization is the slowest block's render time over the block's
+// real-time duration; OverBudget blocks would have underrun in real time.
+type TransitionCost struct {
+	Blocks            int64         `json:"blocks"`
+	RenderTime        time.Duration `json:"render_time"`
+	MaxBlockTime      time.Duration `json:"max_block_time"`
+	BudgetUtilization float64       `json:"budget_utilization"`
+	OverBudget        int64         `json:"over_budget_blocks"`
+}
+
+type transitionCost struct {
+	blocks, total, max, overBudget atomic.Int64
+	utilization                    atomic.Uint64 // float64 bits, max over blocks
+}
+
+func (c *transitionCost) reset() {
+	c.blocks.Store(0)
+	c.total.Store(0)
+	c.max.Store(0)
+	c.overBudget.Store(0)
+	c.utilization.Store(0)
+}
+
+// record is called by the audio thread with the block's render time and
+// real-time duration in nanoseconds. Only the render goroutine writes, so
+// plain load-then-store is enough.
+func (c *transitionCost) record(took, budget int64) {
+	c.blocks.Add(1)
+	c.total.Add(took)
+	if took > c.max.Load() {
+		c.max.Store(took)
+	}
+	if budget > 0 {
+		if u := float64(took) / float64(budget); u > math.Float64frombits(c.utilization.Load()) {
+			c.utilization.Store(math.Float64bits(u))
+		}
+		if took > budget {
+			c.overBudget.Add(1)
+		}
+	}
+}
+
+func (c *transitionCost) snapshot() TransitionCost {
+	return TransitionCost{Blocks: c.blocks.Load(), RenderTime: time.Duration(c.total.Load()), MaxBlockTime: time.Duration(c.max.Load()),
+		BudgetUtilization: math.Float64frombits(c.utilization.Load()), OverBudget: c.overBudget.Load()}
 }
 
 func (e *Engine) TransitionInfo() TransitionInfo {
 	e.patchTraceMu.Lock()
-	var info TransitionInfo
-	for i := len(e.patchTrace) - 1; i >= 0; i-- {
-		if e.patchTrace[i].Result == "applied" {
-			info.Last, info.HasTransition = e.patchTrace[i], true
-			break
+	info := TransitionInfo{Strategies: map[string]int{}}
+	for _, update := range e.patchTrace {
+		if update.Result == "applied" {
+			info.Strategies[update.Strategy]++
+			info.Last, info.HasTransition = update, true
 		}
 	}
 	e.patchTraceMu.Unlock()
 	info.StartFrame = info.Last.AppliedFrame
 	info.EndFrame = info.StartFrame + info.Last.CrossfadeFrames
 	info.Active = info.Last.CrossfadeFrames > 0 && e.frame.Load() < info.EndFrame
+	if info.Last.Strategy == string(patchmodel.TransitionCrossfade) {
+		info.Cost = e.fadeCost.snapshot()
+	}
+	if info.Last.Strategy == string(patchmodel.TransitionHardSwap) && info.Last.InvalidatedHandles > 0 {
+		info.Warnings = append(info.Warnings, fmt.Sprintf("hard swap cut %d sounding notes without a fade", info.Last.InvalidatedHandles))
+	}
+	if info.Cost.OverBudget > 0 {
+		info.Warnings = append(info.Warnings, fmt.Sprintf("crossfade exceeded the real-time budget in %d blocks (peak %.0f%%); shorten :crossfade or use :hard", info.Cost.OverBudget, info.Cost.BudgetUtilization*100))
+	}
 	return info
 }

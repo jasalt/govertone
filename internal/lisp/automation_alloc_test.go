@@ -66,3 +66,30 @@ func TestControlEventRenderDoesNotAllocate(t *testing.T) {
 		t.Fatalf("applying control events allocates %d times over 20 blocks", total)
 	}
 }
+
+// Rendering during a crossfade, including its cost accounting, must not
+// allocate.
+func TestCrossfadeRenderDoesNotAllocate(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	evalAll(t, a, `(defsynth drone {:voices 2} (oscillator {:type :saw}) (out {:gain 64}))`, `(play :drone 60 {:dur 100000})`)
+	buf := make(sointu.AudioBuffer, 512)
+	_ = a.Engine.RenderBlock(buf)
+	evalAll(t, a, `(defsynth drone {:voices 3 :crossfade 0.25} (oscillator {:type :saw}) (out {:gain 64}))`)
+	_ = a.Engine.RenderBlock(buf) // applies the update and starts the fade
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for i := 0; i < 10; i++ {
+		_ = a.Engine.RenderBlock(buf)
+	}
+	runtime.ReadMemStats(&after)
+	if !a.Engine.TransitionInfo().Active {
+		t.Fatal("fade ended before the measurement")
+	}
+	if n := after.Mallocs - before.Mallocs; n > 0 {
+		t.Fatalf("crossfade rendering allocated %d times over 10 blocks", n)
+	}
+}
