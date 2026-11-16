@@ -201,6 +201,7 @@ User code does not change:
 
 - All earlier fixture WAVs and event, control, and automation traces are byte-identical to the build before sharding.
 - A 64-voice synth on 2 VMs matches 64 separately rendered notes within 1e-5, and its output is bit-identical across block sizes 64–5000.
+- `make acceptance` with `CGO_ENABLED=1` passes in the Nix dev shell (`nix develop`), including `go test -race ./...` with the concurrent shard-engine test and the Python fixture analysis.
 - Benchmark, 512-frame block with all voices sounding: 64 voices on 2 VMs take about 6.6 ms, against 3.3 ms for 32 voices on 1 VM. Cost is linear in voice count and within the 10 % budget per voice.
 
 ## Implementation plan
