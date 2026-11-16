@@ -443,9 +443,20 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 		}
 		end = uint64(endFrame)
 	}
-	h, stolen, err := r.allocator.Allocate(id, note, uint64(startFrame), end)
+	h, err := r.scheduleNote(id, note, startFrame, endFrame, dur != nil, end, noteParameters)
 	if err != nil {
 		return vm.NIL, err
+	}
+	return handleMap(h, start), nil
+}
+
+// scheduleNote allocates a voice and queues the trigger, note-local controls
+// and, for a timed note, the release. It is the shared core of play and the
+// MIDI dispatcher.
+func (r *Runtime) scheduleNote(id instruments.InstrumentID, note uint8, startFrame, endFrame clock.FrameIndex, timed bool, end uint64, noteParameters map[patchmodel.ParameterID]float64) (instruments.NoteHandle, error) {
+	h, stolen, err := r.allocator.Allocate(id, note, uint64(startFrame), end)
+	if err != nil {
+		return h, err
 	}
 	if stolen != nil {
 		// Remove the stolen handle's later trigger/tail while retaining any
@@ -454,11 +465,11 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 			r.queue.CancelHandle(stolen.EventID, uint64(startFrame)+1)
 		}
 		if _, err = r.queue.Add(r.noteEvent(startFrame, scheduler.EventRelease, *stolen)); err != nil {
-			return vm.NIL, err
+			return h, err
 		}
 	}
 	if _, err = r.queue.Add(r.noteEvent(startFrame, scheduler.EventTrigger, h)); err != nil {
-		return vm.NIL, err
+		return h, err
 	}
 	parameterIDs := make([]string, 0, len(noteParameters))
 	for parameterID := range noteParameters {
@@ -470,15 +481,15 @@ func (r *Runtime) play(args []vm.Value) (vm.Value, error) {
 		event.Parameter = rawID
 		event.Value = noteParameters[patchmodel.ParameterID(rawID)]
 		if _, err = r.queue.Add(event); err != nil {
-			return vm.NIL, fmt.Errorf("control-queue-full: %w", err)
+			return h, fmt.Errorf("control-queue-full: %w", err)
 		}
 	}
-	if dur != nil {
+	if timed {
 		if _, err = r.queue.Add(r.noteEvent(endFrame, scheduler.EventRelease, h)); err != nil {
-			return vm.NIL, err
+			return h, err
 		}
 	}
-	return handleMap(h, start), nil
+	return h, nil
 }
 func (r *Runtime) noteEvent(frame clock.FrameIndex, kind scheduler.EventKind, h instruments.NoteHandle) scheduler.Event {
 	offset := int(h.Voice)
@@ -517,21 +528,29 @@ func (r *Runtime) release(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, err
 	}
-	at := uint64(r.engine.Frame())
+	ok, err := r.releaseAt(id, uint64(r.engine.Frame()))
+	if err != nil {
+		return vm.NIL, err
+	}
+	return vm.Boolean(ok), nil
+}
+
+// releaseAt releases a note handle at a frame; false means the handle was
+// unknown, ended, or already released.
+func (r *Runtime) releaseAt(id, at uint64) (bool, error) {
 	h, ok := r.allocator.Release(id, at)
 	if !ok {
-		return vm.FALSE, nil
+		return false, nil
 	}
 	r.queue.CancelHandle(id, at)
 	// A future reservation was cancelled before it could own a synth voice.
 	if h.StartFrame > at {
-		return vm.TRUE, nil
+		return true, nil
 	}
-	_, err = r.queue.Add(r.noteEvent(clock.FrameIndex(at), scheduler.EventRelease, h))
-	if err != nil {
-		return vm.NIL, err
+	if _, err := r.queue.Add(r.noteEvent(clock.FrameIndex(at), scheduler.EventRelease, h)); err != nil {
+		return false, err
 	}
-	return vm.TRUE, nil
+	return true, nil
 }
 func (r *Runtime) at(args []vm.Value) (vm.Value, error) {
 	if len(args) != 2 {
