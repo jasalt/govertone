@@ -1,6 +1,8 @@
 package patch
 
 import (
+	"fmt"
+	"math/rand/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -122,4 +124,113 @@ func TestCompatibleChangesKeepSointuOpcodes(t *testing.T) {
 	if inPlace != 2 {
 		t.Fatalf("in-place variants = %d, want 2", inPlace)
 	}
+}
+
+// TestDiffSafetyOnRandomPatches checks the classifier's safety property on
+// seeded random patch pairs: in-place must imply that every shard keeps its
+// Sointu opcode stream and polyphony layout and the voice map is unchanged,
+// and no-op must mean an identical fingerprint.
+func TestDiffSafetyOnRandomPatches(t *testing.T) {
+	rng := rand.New(rand.NewPCG(11, 12))
+	kinds := []string{"sine", "saw", "trisaw", "pulse"}
+	type synth struct {
+		id     InstrumentID
+		kind   string
+		voices int
+		stereo bool
+		max    float64 // 0: no parameters
+	}
+	random := func(id InstrumentID) synth {
+		return synth{id, kinds[rng.IntN(len(kinds))], 1 + rng.IntN(3), rng.IntN(4) == 0, float64(rng.IntN(3) * 64)}
+	}
+	compile := func(synths []synth) *CompiledPatch {
+		specs := make([]InstrumentSpec, 0, len(synths))
+		for _, s := range synths {
+			in := minimal(t, s.id, s.kind, s.voices)
+			for u := range in.Units {
+				in.Units[u].Stereo, in.Units[u].StereoSet = s.stereo, true
+			}
+			if s.max > 0 {
+				in = withParams(in, s.max)
+			}
+			specs = append(specs, in)
+		}
+		return compileSpecs(t, specs...)
+	}
+	// mutate applies 0-2 random edits: operand, parameter range, voices,
+	// stereo, add, remove, or swap two synths.
+	mutate := func(synths []synth) []synth {
+		out := append([]synth(nil), synths...)
+		for n := rng.IntN(3); n > 0; n-- {
+			i := rng.IntN(len(out))
+			switch rng.IntN(7) {
+			case 0:
+				out[i].kind = kinds[rng.IntN(len(kinds))]
+			case 1:
+				out[i].max = float64(rng.IntN(3) * 64)
+			case 2:
+				out[i].voices = 1 + rng.IntN(3)
+			case 3:
+				out[i].stereo = !out[i].stereo
+			case 4:
+				out = append(out, random(InstrumentID(fmt.Sprintf("n%d", rng.IntN(1000)))))
+			case 5:
+				if len(out) > 1 {
+					out = append(out[:i], out[i+1:]...)
+				}
+			case 6:
+				j := rng.IntN(len(out))
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+		return out
+	}
+	layout := func(c *CompiledPatch) []any {
+		var out []any
+		for _, shard := range c.Shards {
+			b, err := sointuvm.NewBytecode(shard.Patch, sointuvm.AllFeatures{}, 120)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, b.Opcodes, b.PolyphonyBitmask)
+		}
+		return append(out, c.VoiceMap)
+	}
+	seen := map[TransitionStrategy]int{}
+	for i := 0; i < 400; i++ {
+		var base []synth
+		for _, id := range []InstrumentID{"a", "b", "c"}[:1+rng.IntN(3)] {
+			base = append(base, random(id))
+		}
+		changed := mutate(base)
+		if len(changed) > 0 && hasDuplicateIDs(changed, func(s synth) InstrumentID { return s.id }) {
+			continue
+		}
+		old, next := compile(base), compile(changed)
+		d := Diff(old, next)
+		seen[d.Strategy]++
+		if (d.Strategy == TransitionNoOp) != (old.Fingerprint == next.Fingerprint) {
+			t.Fatalf("case %d: strategy %s but fingerprints equal = %v", i, d.Strategy, old.Fingerprint == next.Fingerprint)
+		}
+		if d.Strategy == TransitionInPlace && !reflect.DeepEqual(layout(old), layout(next)) {
+			t.Fatalf("case %d: in-place but the Sointu layout changed: %#v", i, d)
+		}
+	}
+	for _, s := range []TransitionStrategy{TransitionNoOp, TransitionInPlace, TransitionHardSwap} {
+		if seen[s] == 0 {
+			t.Fatalf("strategy %s never generated: %v", s, seen)
+		}
+	}
+	t.Logf("strategies: %v", seen)
+}
+
+func hasDuplicateIDs[T any](items []T, id func(T) InstrumentID) bool {
+	seen := map[InstrumentID]bool{}
+	for _, item := range items {
+		if seen[id(item)] {
+			return true
+		}
+		seen[id(item)] = true
+	}
+	return false
 }
