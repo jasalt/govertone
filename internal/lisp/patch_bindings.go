@@ -735,11 +735,12 @@ func (r *Runtime) synthsFn(args []vm.Value) (vm.Value, error) {
 		return vm.NIL, fmt.Errorf("synths expects no arguments")
 	}
 	snapshot := r.patchRegistry.Snapshot()
+	placement := r.patchRegistry.Placement()
 	values := make([]vm.Value, 0, len(snapshot.Layout.OrderedIDs))
 	for _, id := range snapshot.Layout.OrderedIDs {
 		in := snapshot.Layout.Instruments[id]
 		spec, _ := r.patchRegistry.Definition(id)
-		values = append(values, mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source)))
+		values = append(values, mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source), vm.Keyword("shards"), synthShardsVM(placement, id)))
 	}
 	return vm.NewPersistentVector(values), nil
 }
@@ -761,7 +762,7 @@ func (r *Runtime) synthInfoFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, err
 	}
-	return mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("instrument-index"), vm.Int(in.Index), vm.Keyword("first-voice"), vm.Int(in.FirstVoice), vm.Keyword("unit-count"), vm.Int(len(spec.Units)), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source), vm.Keyword("parameters"), parameters, vm.Keyword("units"), instrumentToVM(spec).(*vm.PersistentMap).ValueAt(vm.Keyword("units"))), nil
+	return mapOf(vm.Keyword("id"), vm.Keyword(id), vm.Keyword("voices"), vm.Int(in.NumVoices), vm.Keyword("instrument-index"), vm.Int(in.Index), vm.Keyword("first-voice"), vm.Int(in.FirstVoice), vm.Keyword("unit-count"), vm.Int(len(spec.Units)), vm.Keyword("generation"), vm.Int(snapshot.Generation), vm.Keyword("fingerprint"), vm.String(in.Fingerprint), vm.Keyword("source"), sourceToVM(spec.Metadata.Source), vm.Keyword("parameters"), parameters, vm.Keyword("units"), instrumentToVM(spec).(*vm.PersistentMap).ValueAt(vm.Keyword("units")), vm.Keyword("shards"), synthShardsVM(r.patchRegistry.Placement(), id)), nil
 }
 func (r *Runtime) removeSynthFn(args []vm.Value) (vm.Value, error) {
 	if len(args) != 1 {
@@ -795,7 +796,31 @@ func (r *Runtime) patchInfoFn(args []vm.Value) (vm.Value, error) {
 		return vm.NIL, fmt.Errorf("patch-info expects no arguments")
 	}
 	s := r.patchRegistry.Snapshot()
-	return mapOf(vm.Keyword("generation"), vm.Int(s.Generation), vm.Keyword("fingerprint"), vm.String(s.Fingerprint), vm.Keyword("instrument-count"), vm.Int(len(s.Definitions)), vm.Keyword("voice-count"), vm.Int(s.Layout.TotalVoices), vm.Keyword("pending"), vm.FALSE), nil
+	placement := r.patchRegistry.Placement()
+	shards := make([]vm.Value, 0, len(placement.Shards))
+	for _, shard := range placement.Shards {
+		ids := make([]vm.Value, 0, len(shard.Instruments))
+		for _, in := range shard.Instruments {
+			ids = append(ids, vm.Keyword(in.ID))
+		}
+		shards = append(shards, mapOf(vm.Keyword("index"), vm.Int(shard.Index), vm.Keyword("voices"), vm.Int(shard.Voices), vm.Keyword("synths"), vm.NewPersistentVector(ids)))
+	}
+	budget := mapOf(vm.Keyword("used"), vm.Int(s.Layout.TotalVoices), vm.Keyword("limit"), vm.Int(placement.VoiceLimit), vm.Keyword("per-vm"), vm.Int(placement.VoicesPerVM), vm.Keyword("max-vms"), vm.Int(placement.MaxShards))
+	return mapOf(vm.Keyword("generation"), vm.Int(s.Generation), vm.Keyword("fingerprint"), vm.String(s.Fingerprint), vm.Keyword("instrument-count"), vm.Int(len(s.Definitions)), vm.Keyword("voice-count"), vm.Int(s.Layout.TotalVoices), vm.Keyword("pending"), vm.FALSE, vm.Keyword("shards"), vm.NewPersistentVector(shards), vm.Keyword("voice-budget"), budget), nil
+}
+
+// synthShardsVM lists where a synth's voices run: one entry per Sointu VM
+// hosting the synth or one of its slices.
+func synthShardsVM(placement patchmodel.Placement, id patchmodel.InstrumentID) vm.Value {
+	values := []vm.Value{}
+	for _, shard := range placement.Shards {
+		for _, in := range shard.Instruments {
+			if in.ID == id {
+				values = append(values, mapOf(vm.Keyword("shard"), vm.Int(shard.Index), vm.Keyword("slice"), vm.Int(in.Slice), vm.Keyword("first-voice"), vm.Int(in.FirstLogicalVoice), vm.Keyword("local-first-voice"), vm.Int(in.FirstLocalVoice), vm.Keyword("voices"), vm.Int(in.NumVoices)))
+			}
+		}
+	}
+	return vm.NewPersistentVector(values)
 }
 func (r *Runtime) synthFormFn(args []vm.Value) (vm.Value, error) {
 	if len(args) != 1 {

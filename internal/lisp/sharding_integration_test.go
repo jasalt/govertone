@@ -67,3 +67,36 @@ func TestCoupledOverflowLeavesActivePatchUnchanged(t *testing.T) {
 		t.Fatal("rejected patch changed the active patch")
 	}
 }
+
+func TestShardIntrospection(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err = a.Lisp.Eval(`(defsynth pad {:voices 40} (envelope) (oscillator) (mulp) (out))`); err != nil {
+		t.Fatal(err)
+	}
+	info, err := a.Lisp.Eval(`(patch-info)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{":voice-count 64", ":voice-budget {", ":used 64", ":limit 256", ":per-vm 32", ":max-vms 16", ":synths [:sine :lead :bass :pad]", ":synths [:pad]"} {
+		if !strings.Contains(info.String(), want) {
+			t.Fatalf("(patch-info) lacks %s: %s", want, info)
+		}
+	}
+	synth, err := a.Lisp.Eval(`(mapv (juxt :shard :slice :first-voice :local-first-voice :voices) (:shards (synth-info :pad)))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// First fit: slice 0 (32 voices) needs a fresh VM 1, and slice 1 (8)
+	// fills VM 0 after the 24 startup voices.
+	if got := synth.String(); got != "[[0 1 56 24 8] [1 0 24 0 32]]" {
+		t.Fatalf("(synth-info :pad) shards %s", got)
+	}
+	listed, err := a.Lisp.Eval(`(:shards (first (synths)))`)
+	if err != nil || !strings.Contains(listed.String(), ":shard 0") {
+		t.Fatalf("(synths) shards: %v %v", listed, err)
+	}
+}

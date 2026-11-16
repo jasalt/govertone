@@ -168,6 +168,37 @@ func (r *Registry) Snapshot() RegistrySnapshot {
 	defer r.mu.RUnlock()
 	return RegistrySnapshot{r.generation, r.compiled.Fingerprint, r.definitionsLocked(), cloneLayout(r.compiled.Layout)}
 }
+
+// ShardSummary describes one Sointu VM of the active patch.
+type ShardSummary struct {
+	Index       int
+	Voices      int
+	Instruments []ShardInstrument
+}
+
+// Placement describes how the active patch is split over Sointu VMs.
+type Placement struct {
+	Shards      []ShardSummary
+	VoiceLimit  int // logical aggregate limit of the registry's compiler
+	VoicesPerVM int
+	MaxShards   int
+}
+
+// Placement returns the active shard plan without cloning Sointu patches.
+func (r *Registry) Placement() Placement {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := Placement{VoiceLimit: r.compiler.MaxVoices, VoicesPerVM: r.compiler.VoicesPerVM, MaxShards: r.compiler.MaxShards}
+	for _, shard := range r.compiled.Shards {
+		summary := ShardSummary{Index: shard.Index, Voices: shard.TotalVoices, Instruments: append([]ShardInstrument(nil), shard.Instruments...)}
+		for i := range summary.Instruments {
+			summary.Instruments[i].HardReleaseOperands = nil
+		}
+		out.Shards = append(out.Shards, summary)
+	}
+	return out
+}
+
 func (r *Registry) Compiled() *CompiledPatch {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
