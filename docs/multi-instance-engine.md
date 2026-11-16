@@ -151,7 +151,7 @@ The update path remains transactional and uses the existing render-boundary mute
 3. At the boundary, call `Update` on changed shards, install new shards, and drop removed shards. Unchanged shards are not touched.
 4. Publish the new `VoiceMap`, layout, and generation together.
 
-Phase 1 handles conservatively remain the initial policy: a changed aggregate invalidates every handle. A later step can invalidate only handles on changed shards, so redefining one synth would no longer cut notes on synths in other shards. Phase 3 M6 (#11) can classify that case as "unchanged shard".
+A structural change still invalidates every handle (crossfaded since #12); value-only changes keep handles (in-place, #11). A later step can invalidate only handles on changed shards, so redefining one synth would no longer cut notes on synths in other shards. Phase 3 M6 (#11) can classify that case as "unchanged shard".
 
 ### 7. Relationship to crossfaded transitions (#12)
 

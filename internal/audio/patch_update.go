@@ -24,7 +24,10 @@ type PatchUpdateTrace struct {
 	// their handles, "hard-swap" releases them (phase-3.md §17.2).
 	Strategy         string `json:"strategy,omitempty"`
 	PreservedHandles int    `json:"preserved_handles,omitempty"`
-	Result           string `json:"result"`
+	// CrossfadeFrames and CrossfadeCurve describe a crossfade strategy.
+	CrossfadeFrames uint64 `json:"crossfade_frames,omitempty"`
+	CrossfadeCurve  string `json:"crossfade_curve,omitempty"`
+	Result          string `json:"result"`
 	// Shard detail: VM counts before and after, and which shard VMs were
 	// updated in place, constructed, or closed. Unlisted shards were
 	// untouched.
@@ -69,9 +72,19 @@ type PatchUpdateResult struct {
 // unchanged voice map, sounding notes keep playing and their handles stay
 // valid: Sointu keeps voice state because the opcode stream is unchanged.
 // Any other strategy releases every sounding note and invalidates handles.
-func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, changed, removed []patchmodel.InstrumentID, strategy patchmodel.TransitionStrategy) (PatchUpdateResult, error) {
+//
+// TransitionCrossfade (with fade.Frames > 0) builds every new VM from scratch
+// control-side; the old VMs keep rendering their released notes and tails
+// while they fade out over fade.Frames (phase-3.md §18).
+func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, changed, removed []patchmodel.InstrumentID, strategy patchmodel.TransitionStrategy, fade Crossfade) (PatchUpdateResult, error) {
 	if compiled == nil {
 		return PatchUpdateResult{}, fmt.Errorf("nil compiled patch")
+	}
+	if err := fade.Validate(); err != nil {
+		return PatchUpdateResult{}, err
+	}
+	if strategy == patchmodel.TransitionCrossfade && fade.Frames == 0 {
+		strategy = patchmodel.TransitionHardSwap
 	}
 	if len(compiled.Shards) == 0 {
 		return PatchUpdateResult{}, fmt.Errorf("compiled patch has no shards")
@@ -88,6 +101,9 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 	current := len(e.shards)
 	if current == 0 {
 		return PatchUpdateResult{}, fmt.Errorf("engine is closed")
+	}
+	if strategy == patchmodel.TransitionCrossfade {
+		return e.crossfadePatch(compiled, bpm, changed, removed, fade, requestedFrame, oldGeneration, oldFingerprint)
 	}
 	var added []*engineShard
 	for _, shard := range compiled.Shards[min(current, len(compiled.Shards)):] {

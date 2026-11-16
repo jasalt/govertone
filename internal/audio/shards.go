@@ -121,16 +121,28 @@ func renderSynth(synth sointu.Synth, dst sointu.AudioBuffer) error {
 // dst in ascending shard order with unity gain: dst = ((s0 + s1) + s2) + ...
 // The fixed order keeps float results reproducible. A single shard renders
 // straight into dst, exactly as the former single-VM engine did.
-func (e *Engine) renderShards(dst sointu.AudioBuffer) error {
+func (e *Engine) renderShards(dst sointu.AudioBuffer, start uint64) error {
 	if len(e.shards) == 0 {
 		return fmt.Errorf("engine is closed")
 	}
-	if err := renderSynth(e.shards[0].synth, dst); err != nil {
+	if err := renderShardsInto(e.shards, dst, e.scratch); err != nil {
 		return err
 	}
-	for _, shard := range e.shards[1:] {
+	if e.fade != nil {
+		return e.mixFade(dst, start)
+	}
+	return nil
+}
+
+// renderShardsInto renders shards into dst, mixing shards after the first
+// through scratch.
+func renderShardsInto(shards []*engineShard, dst, scratch sointu.AudioBuffer) error {
+	if err := renderSynth(shards[0].synth, dst); err != nil {
+		return err
+	}
+	for _, shard := range shards[1:] {
 		for done := 0; done < len(dst); {
-			chunk := e.scratch[:min(len(dst)-done, len(e.scratch))]
+			chunk := scratch[:min(len(dst)-done, len(scratch))]
 			if err := renderSynth(shard.synth, chunk); err != nil {
 				return err
 			}

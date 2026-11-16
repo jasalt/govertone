@@ -253,7 +253,7 @@ func TestShardedPatchUpdateGrowsShrinksAndTraces(t *testing.T) {
 	}
 	grown := shardRegistry(t, gatedSynth(t, "pad", 8), gatedSynth(t, "big", 48)).Compiled()
 	grown.Generation = 2
-	result, err := e.UpdatePatch(grown, 120, []patchmodel.InstrumentID{"big"}, nil, patchmodel.TransitionHardSwap)
+	result, err := e.UpdatePatch(grown, 120, []patchmodel.InstrumentID{"big"}, nil, patchmodel.TransitionHardSwap, Crossfade{})
 	if err != nil || !result.Changed || result.InvalidatedHandles != 1 {
 		t.Fatalf("grow: %#v %v", result, err)
 	}
@@ -271,7 +271,7 @@ func TestShardedPatchUpdateGrowsShrinksAndTraces(t *testing.T) {
 	}
 	shrunk := shardRegistry(t, gatedSynth(t, "pad", 8)).Compiled()
 	shrunk.Generation = 3
-	if _, err = e.UpdatePatch(shrunk, 120, nil, []patchmodel.InstrumentID{"big"}, patchmodel.TransitionHardSwap); err != nil {
+	if _, err = e.UpdatePatch(shrunk, 120, nil, []patchmodel.InstrumentID{"big"}, patchmodel.TransitionHardSwap, Crossfade{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(e.shards) != 1 || len(e.owners) != 8 {
@@ -367,7 +367,7 @@ func TestClosedEngineRejectsRenderAndUpdate(t *testing.T) {
 		t.Fatal("closed engine rendered")
 	}
 	next := shardRegistry(t, gatedSynth(t, "pad", 8)).Compiled()
-	if _, err := e.UpdatePatch(next, 120, nil, nil, patchmodel.TransitionHardSwap); err == nil {
+	if _, err := e.UpdatePatch(next, 120, nil, nil, patchmodel.TransitionHardSwap, Crossfade{}); err == nil {
 		t.Fatal("closed engine accepted an update")
 	}
 }
@@ -391,7 +391,7 @@ func TestShardedEngineConcurrentUse(t *testing.T) {
 		if i == 25 {
 			next := shardRegistry(t, gatedSynth(t, "pad", 72)).Compiled()
 			next.Generation = 2
-			if _, err := e.UpdatePatch(next, 120, []patchmodel.InstrumentID{"pad"}, nil, patchmodel.TransitionHardSwap); err != nil {
+			if _, err := e.UpdatePatch(next, 120, []patchmodel.InstrumentID{"pad"}, nil, patchmodel.TransitionHardSwap, Crossfade{}); err != nil {
 				t.Error(err)
 			}
 		}

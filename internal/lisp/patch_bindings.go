@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/example/letgo-sointu/internal/audio"
+	"github.com/example/letgo-sointu/internal/clock"
 	"github.com/example/letgo-sointu/internal/instruments"
 	patchmodel "github.com/example/letgo-sointu/internal/patch"
 	"github.com/nooga/let-go/pkg/rt"
@@ -641,29 +643,55 @@ func layoutToVM(layout patchmodel.InstrumentLayout) vm.Value {
 	return mapOf(vm.Keyword("instruments"), vm.NewPersistentVector(values), vm.Keyword("total-voices"), vm.Int(layout.TotalVoices))
 }
 
-// transitionOption parses {:transition :auto|:in-place|:hard} (phase-3.md
-// §17.3). :crossfade is reserved for #12 and rejected for now.
-func transitionOption(options map[string]vm.Value) (string, error) {
-	value := options["transition"]
-	if value == nil {
-		return "auto", nil
-	}
-	name, err := keywordName(value, "synth :transition")
-	if err != nil {
-		return "", err
-	}
-	switch name {
-	case "auto", "in-place", "hard":
-		return name, nil
-	case "crossfade":
-		return "", fmt.Errorf("unsupported-transition: :crossfade is not implemented yet; use :auto, :in-place, or :hard")
-	}
-	return "", fmt.Errorf("invalid-transition: :%s; expected :auto, :in-place, or :hard", name)
+// transitionRequest is a parsed {:transition ... :crossfade ... :crossfade-curve ...}.
+type transitionRequest struct {
+	mode string // auto, in-place, crossfade, or hard
+	fade audio.Crossfade
 }
 
-// installCandidate applies a prepared update. requested is "auto",
-// "in-place" (rejected unless the diff proves it safe), or "hard".
-func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate, requested string) (patchmodel.PatchGeneration, patchmodel.TransitionStrategy, error) {
+var autoTransition = transitionRequest{mode: "auto", fade: audio.DefaultCrossfade}
+
+// transitionOption parses {:transition :auto|:in-place|:crossfade|:hard},
+// {:crossfade seconds} (0–0.25, default 0.02) and {:crossfade-curve
+// :equal-power|:linear} (phase-3.md §17.3, §18.3).
+func transitionOption(options map[string]vm.Value) (transitionRequest, error) {
+	request := autoTransition
+	if value := options["transition"]; value != nil {
+		name, err := keywordName(value, "synth :transition")
+		if err != nil {
+			return request, err
+		}
+		switch name {
+		case "auto", "in-place", "crossfade", "hard":
+			request.mode = name
+		default:
+			return request, fmt.Errorf("invalid-transition: :%s; expected :auto, :in-place, :crossfade, or :hard", name)
+		}
+	}
+	if value := options["crossfade"]; value != nil {
+		seconds, err := numValue(value)
+		if err != nil || math.IsNaN(seconds) || seconds < 0 || seconds > 0.25 {
+			return request, fmt.Errorf("invalid-crossfade: :crossfade must be 0 to 0.25 seconds")
+		}
+		request.fade.Frames = uint64(math.Round(seconds * clock.SampleRate))
+	}
+	if value := options["crossfade-curve"]; value != nil {
+		curve, err := keywordName(value, "synth :crossfade-curve")
+		if err != nil {
+			return request, err
+		}
+		request.fade.Curve = curve
+		if err = request.fade.Validate(); err != nil {
+			return request, err
+		}
+	}
+	return request, nil
+}
+
+// installCandidate applies a prepared update. Under :auto, changes the diff
+// cannot apply in place crossfade; :in-place is rejected unless the diff
+// proves it safe; :crossfade and :hard force those strategies.
+func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate, request transitionRequest) (patchmodel.PatchGeneration, patchmodel.TransitionStrategy, error) {
 	if !update.Changed {
 		if err := r.patchRegistry.Commit(update); err != nil {
 			return update.BaseGeneration, "", err
@@ -672,7 +700,13 @@ func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate, re
 	}
 	diff := patchmodel.Diff(r.patchRegistry.Compiled(), update.Compiled)
 	strategy := diff.Strategy
-	switch requested {
+	switch request.mode {
+	case "auto":
+		if strategy == patchmodel.TransitionHardSwap {
+			strategy = patchmodel.TransitionCrossfade
+		}
+	case "crossfade":
+		strategy = patchmodel.TransitionCrossfade
 	case "hard":
 		strategy = patchmodel.TransitionHardSwap
 	case "in-place":
@@ -685,7 +719,7 @@ func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate, re
 			return update.BaseGeneration, "", fmt.Errorf("unsafe-transition: :in-place requested but %s; use :auto or :hard", reason)
 		}
 	}
-	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed, strategy)
+	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed, strategy, request.fade)
 	if err != nil {
 		return update.BaseGeneration, "", err
 	}
@@ -770,7 +804,7 @@ func (r *Runtime) installPatchFn(args []vm.Value) (vm.Value, error) {
 		order = append(order, in.ID)
 	}
 	update := &patchmodel.PreparedRegistryUpdate{BaseGeneration: current.Generation, Definitions: definitions, Order: order, Compiled: compiled, Changed: compiled.Fingerprint != current.Fingerprint, ChangedIDs: order}
-	generation, strategy, err := r.installCandidate(update, "auto")
+	generation, strategy, err := r.installCandidate(update, autoTransition)
 	if err != nil {
 		return vm.NIL, err
 	}
@@ -826,7 +860,7 @@ func (r *Runtime) removeSynthFn(args []vm.Value) (vm.Value, error) {
 	if !update.Changed {
 		return mapOf(vm.Keyword("removed"), vm.FALSE, vm.Keyword("id"), vm.Keyword(id), vm.Keyword("generation"), vm.Int(update.BaseGeneration)), nil
 	}
-	generation, _, err := r.installCandidate(update, "auto")
+	generation, _, err := r.installCandidate(update, autoTransition)
 	if err != nil {
 		return vm.NIL, err
 	}

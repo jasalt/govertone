@@ -138,10 +138,10 @@ func TestInPlaceUpdateKeepsSoundingNotes(t *testing.T) {
 	if rmsOf(out[2205:]) < 0.01 {
 		t.Fatal("note went silent after an in-place update")
 	}
-	// Changing the voice count is structural: the note is released.
+	// Changing the voice count is structural: the note is released and fades out.
 	evalAll(t, a, pad("saw", 3))
-	if u := last(); u.Strategy != "hard-swap" || u.InvalidatedHandles != 1 {
-		t.Fatalf("hard-swap trace %#v", u)
+	if u := last(); u.Strategy != "crossfade" || u.InvalidatedHandles != 1 {
+		t.Fatalf("crossfade trace %#v", u)
 	}
 	if _, err := a.Lisp.Eval(`(ctl n :vel 10)`); err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("handle survived a hard swap: %v", err)
@@ -170,11 +170,12 @@ func TestTransitionOverride(t *testing.T) {
 		return `(:transition (defsynth pad {` + opts + `} (envelope {}) (oscillator {:type ` + kind + `}) (mulp) (out {})))`
 	}
 	for _, step := range []struct{ form, want string }{
-		{synth("", ":sine", 2), ":hard-swap"},
+		{synth("", ":sine", 2), ":crossfade"},
 		{synth("", ":sine", 2), ":no-op"},
 		{synth(":in-place", ":saw", 2), ":in-place"},
 		{synth(":hard", ":sine", 2), ":hard-swap"},
 		{synth(":auto", ":pulse", 2), ":in-place"},
+		{synth(":crossfade", ":sine", 2), ":crossfade"},
 	} {
 		v, err := a.Lisp.Eval(step.form)
 		if err != nil || v.String() != step.want {
@@ -183,9 +184,8 @@ func TestTransitionOverride(t *testing.T) {
 	}
 	generation := a.Engine.PatchGeneration()
 	for form, want := range map[string]string{
-		synth(":in-place", ":sine", 3):  "unsafe-transition: :in-place requested but :pad voices 2 -> 3",
-		synth(":crossfade", ":sine", 2): "unsupported-transition",
-		synth(":bogus", ":sine", 2):     "invalid-transition",
+		synth(":in-place", ":sine", 3): "unsafe-transition: :in-place requested but :pad voices 2 -> 3",
+		synth(":bogus", ":sine", 2):    "invalid-transition",
 	} {
 		if _, err := a.Lisp.Eval(form); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: %v, want %q", form, err, want)

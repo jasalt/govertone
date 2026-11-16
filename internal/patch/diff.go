@@ -35,6 +35,10 @@ const (
 	TransitionNoOp     TransitionStrategy = "no-op"
 	TransitionInPlace  TransitionStrategy = "in-place"
 	TransitionHardSwap TransitionStrategy = "hard-swap"
+	// TransitionCrossfade is a hard swap whose replaced Sointu VMs fade out
+	// instead of stopping (phase-3.md §18). Diff never selects it; the
+	// runtime upgrades hard-swap when a crossfade duration is configured.
+	TransitionCrossfade TransitionStrategy = "crossfade"
 )
 
 // PatchDiff classifies every instrument of two generations. Lists follow

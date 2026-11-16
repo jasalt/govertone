@@ -61,6 +61,8 @@ type Engine struct {
 	// mappedBy names the bus driving each mapped parameter.
 	buses    map[BusID]*ControlBus
 	mappedBy map[controlKey]BusID
+	// fade holds VMs replaced by a crossfaded update while they fade out.
+	fade *fadingEngine
 }
 
 func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm float64) (*Engine, error) {
@@ -96,6 +98,10 @@ func (e *Engine) Close() {
 		defer e.renderMu.Unlock()
 		closeShards(e.shards)
 		e.shards = nil
+		if e.fade != nil {
+			closeShards(e.fade.shards)
+			e.fade = nil
+		}
 	})
 }
 func (e *Engine) Frame() clock.FrameIndex { return clock.FrameIndex(e.frame.Load()) }
@@ -104,13 +110,13 @@ func (e *Engine) render(dst sointu.AudioBuffer, start uint64) error {
 	if e.automation.active() {
 		for index := range dst {
 			e.advanceControls(start + uint64(index))
-			if err := e.renderShards(dst[index : index+1]); err != nil {
+			if err := e.renderShards(dst[index:index+1], start+uint64(index)); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return e.renderShards(dst)
+	return e.renderShards(dst, start)
 }
 
 // ensureScratch allocates the shard mix buffer control-side when the patch

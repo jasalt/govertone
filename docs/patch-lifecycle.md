@@ -31,7 +31,19 @@ The update strategy, recorded as `strategy` in the patch trace:
 
 - **no-op**: identical fingerprint; the update is elided and the generation stays.
 - **in-place**: every instrument is `unchanged`, `control-schema` or `compatible`. Sointu keeps voice state because the opcode stream is unchanged, so **sounding notes keep playing, their handles stay valid**, and voice controls carry over (`preserved_handles`).
-- **hard-swap**: anything else. Sounding notes are released, every handle is invalidated, and allocator ownership is reset (`invalidated_handles`). Old release requests cannot affect new voices because IDs, generation, and voice epochs are checked by host ownership. Crossfaded transitions (#12) are not implemented yet.
+- **crossfade**: the default for anything else (added, removed or incompatible instruments). Every new Sointu VM is built control-side. At the update frame, the old VMs move to a fade slot, sounding notes there get note-off, and their output (release tails included) fades out over the crossfade duration, then the old VMs are closed. The new VMs play at unity gain from the update frame: they start silent, so fading them in would only attenuate new notes. Handles are invalidated and allocator ownership is reset (`invalidated_handles`), and controls migrate as below. The trace records `crossfade_frames` and `crossfade_curve`. The fade gain depends only on the absolute frame, so output stays block-size invariant. The old VMs render alongside the new ones only during the fade. An update during a running fade cuts the earlier fade short.
+- **hard-swap**: VMs are updated in place, sounding notes are released (envelope-less voices are muted), every handle is invalidated, and allocator ownership is reset. Old release requests cannot affect new voices because IDs, generation, and voice epochs are checked by host ownership. It is used with `{:transition :hard}` or `{:crossfade 0}`.
+
+`defsynth` options choose the transition:
+
+| Option | Meaning |
+|---|---|
+| `:transition :auto` | default: no-op, in-place, or crossfade |
+| `:transition :in-place` | rejected with `unsafe-transition` unless the change is compatible |
+| `:transition :crossfade` | crossfade even a compatible change |
+| `:transition :hard` | hard swap |
+| `:crossfade 0.02` | fade duration in seconds, 0–0.25, default 0.02 (0 means hard swap) |
+| `:crossfade-curve :equal-power` | `:equal-power` (old gain `cos(t·π/2)`, default) or `:linear` |
 
 ## Control migration
 

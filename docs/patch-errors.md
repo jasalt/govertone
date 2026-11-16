@@ -41,4 +41,4 @@ A candidate compiled by temporary Sointu can still theoretically fail `Synth.Upd
 
 ## Transition requests
 
-`{:transition ...}` errors happen before any update, so the previous generation stays active. `unsafe-transition` means `:in-place` was requested but the change alters the Sointu state layout; the message names the synth and the reason, such as `voices 2 -> 3`. `invalid-transition` is an unknown value. `unsupported-transition` is `:crossfade`, which is not implemented yet.
+`{:transition ...}` and crossfade errors happen before any update, so the previous generation stays active. `unsafe-transition` means `:in-place` was requested but the change alters the Sointu state layout; the message names the synth and the reason, such as `voices 2 -> 3`. `invalid-transition` is an unknown `:transition` value. `invalid-crossfade` is a `:crossfade` outside 0–0.25 seconds or an unknown `:crossfade-curve`.
