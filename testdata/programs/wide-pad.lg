@@ -1,0 +1,15 @@
+;; A 64-voice pad: more voices than one Sointu VM holds. lgs splits it
+;; into two 32-voice slices that run in separate VMs and are mixed
+;; sample-accurately. Combined with the 24 startup voices, the patch uses
+;; 88 voices on 3 VMs.
+(defsynth wide-pad {:voices 64}
+  (envelope {:attack 40 :decay 64 :sustain 96 :release 72})
+  (oscillator {:type :saw :detune 66})
+  (mulp)
+  (filter {:type :lowpass :frequency 70 :resonance 120})
+  (out {:gain 6}))
+
+;; 64 overlapping notes: two octaves of a slow arpeggio, every note held
+;; for the whole phrase so all 64 voices sound together at the end.
+(doseq [i (range 64)]
+  (play wide-pad (+ 36 (* 2 (mod i 24))) {:at (* i 1/16) :dur (- 6 (* i 1/16))}))

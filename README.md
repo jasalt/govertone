@@ -93,20 +93,18 @@ Reevaluating the same `defsynth` with changed units transactionally updates Soin
 
 ## Sointu limits and voice budgeting
 
-Sointu v0.6.0 permits at most **32 voices across the entire patch**, not 32 per `defsynth`. The startup `:sine`, `:lead`, and `:bass` definitions reserve 24, so adding `{:voices 34}` can never work and adding `{:voices 32}` also exceeds the existing aggregate. Replace the patch to dedicate all 32 voices to one synth:
+One Sointu VM holds at most 32 voices. `lgs` splits a patch across several VMs, renders them in lockstep, and mixes them sample-accurately. A synth can therefore have up to 128 voices, and a patch up to 256, with no change to the API:
 
 ```clojure
-(install-patch!
-  (patch
-    (instrument :live-lead {:voices 32}
-      (envelope {:attack 4 :decay 32 :sustain 100 :release 40})
-      (oscillator {:type :saw})
-      (mulp)
-      (filter {:type :lowpass :frequency 108 :resonance 110})
-      (out {:gain 70}))))
+(defsynth pad {:voices 64}
+  (envelope {:attack 32 :release 64})
+  (oscillator {:type :saw})
+  (mulp)
+  (out {:gain 8}))
+(patch-info) ; => {... :voice-budget {:used 88 :limit 256 :per-vm 32 :max-vms 16} :shards [...]}
 ```
 
-More than 32 independently gated notes requires multiple Sointu instances and external mixing; current `lgs` uses one instance. The accepted architecture for lifting this is to shard one logical patch transparently across several Sointu VMs with the same API (planned; see [multi-instance engine](docs/multi-instance-engine.md)). Voice stealing, realistic per-instrument allocations, and multiple/unison oscillators per voice can reduce demand, but layered oscillators are not independent voices. Sointu also imposes unit, stack, routing, delay, sample-table, and output constraints. See [Sointu restrictions and workarounds](docs/sointu-restrictions.md).
+Synths connected through `aux`/`in` channels or a cross-synth `send` must share one VM, so such a group is still limited to 32 voices. An `in` on channel 0/1 reads the main output and therefore couples with every synth using `out`. Voice stealing, realistic per-instrument allocations, and multiple/unison oscillators per voice reduce demand, and every configured voice costs CPU even when silent. Sointu also imposes unit, stack, routing, delay, sample-table, and output constraints. See [Sointu restrictions and workarounds](docs/sointu-restrictions.md) and the [multi-instance engine](docs/multi-instance-engine.md) design.
 
 ## Live controls and automation
 
@@ -195,7 +193,7 @@ The operational subcommands accept `--log-level error|warn|info|debug` and `--js
 ## Current limitations (Phase 3 in progress)
 
 - A changed aggregate patch conservatively invalidates all active note handles and resets voice allocation. There is no crossfade or general Sointu state migration yet, so live redefinition can produce an audible transition.
-- Sointu v0.6.0 limits the aggregate to 32 voices and each instrument to 63 encoded units. The three startup synths use 24 voices; remove or replace them when a project needs a different layout. More than 32 voices requires separately mixed VM instances; see [the restrictions and workarounds guide](docs/sointu-restrictions.md).
+- One Sointu VM holds 32 voices, and each instrument at most 63 encoded units. `lgs` splits patches across up to 16 VMs (128 voices per synth, 256 per patch), but synths coupled through `aux`/`in`/cross-synth `send` must fit in one VM. See [the restrictions and workarounds guide](docs/sointu-restrictions.md).
 - Named controls, per-note values, smoothing, and built-in automation curves are supported. Control buses and arbitrary user-defined audio-rate automation functions are not.
 - Only stereo output at 44.1 kHz is supported. There is no sample-library management, disk streaming, microphone input, or multichannel output.
 - There is no MIDI, OSC, pattern language, swing/groove engine, tempo ramp, plugin system, native controlled export, WebAssembly controlled export, or arbitrary user-defined DSP opcode support.

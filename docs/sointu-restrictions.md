@@ -2,45 +2,51 @@
 
 `lgs` uses the pinned Sointu v0.6.0 Go VM. Some limits come from Sointu's bytecode format, while others are conservative `lgs` portability or host policies. Patch candidates are checked before installation, so a rejected candidate leaves the active patch unchanged.
 
-## Voice budget: 32 across the whole patch
+## Voice budget: 32 per Sointu VM, 256 per patch
 
-Sointu stores instrument/voice boundaries in a 32-bit polyphony mask. Consequently, one Sointu patch—and therefore one current `lgs` engine—can contain at most **32 voices total**. `:voices` is an instrument's independently gated polyphony, not its oscillator count.
+Sointu stores instrument/voice boundaries in a 32-bit polyphony mask, so one Sointu VM holds at most **32 voices**. `lgs` hides this limit by splitting one logical patch across several VMs (shards). The VMs render the same frames and are summed sample-accurately, so the API is the same as for one VM. See [multi-instance engine](multi-instance-engine.md). `:voices` is an instrument's independently gated polyphony, not its oscillator count.
 
-The startup patch contains `:sine`, `:lead`, and `:bass` with eight voices each, consuming 24 of the 32 voices. Therefore this fails both because 34 is invalid for one instrument and because the limit is aggregate:
+| Limit | Default | Diagnostic |
+| --- | --- | --- |
+| voices per synth | 128 | `:invalid-voice-count` |
+| voices per patch | 256 | `:voice-limit-exceeded` |
+| Sointu VMs per patch | 16 | `:shard-limit-exceeded` |
+| voices per coupled group (one VM) | 32 | `:coupled-group-voice-limit-exceeded` |
+
+A synth with more than 32 voices is split into identical slices of at most 32 voices, each in its own VM:
 
 ```clojure
-(defsynth live-lead {:voices 34} ...)
+(defsynth pad {:voices 64}
+  (envelope {:attack 32 :release 64})
+  (oscillator {:type :saw})
+  (mulp)
+  (out {:gain 8}))
+
+(doseq [n (range 48 72)] (play pad n {:dur 8}))
 ```
 
-Inspect the current budget with `(synths)` or `(patch-info)`. To dedicate all 32 voices to one instrument, replace the aggregate patch rather than adding to the startup patch:
+Use `(patch-info)` for the budget (`:voice-budget {:used :limit :per-vm :max-vms}`) and the VM layout (`:shards`). `(synth-info :pad)` and `(synths)` list where each synth's voices run. `testdata/programs/wide-pad.lg` is a renderable 64-voice example.
 
-```clojure
-(install-patch!
-  (patch
-    (instrument :live-lead {:voices 32}
-      (envelope {:attack 4 :decay 32 :sustain 100 :release 40})
-      (oscillator {:type :saw})
-      (mulp)
-      (filter {:type :lowpass :frequency 108 :resonance 110})
-      (out {:gain 70}))))
+### Coupled synths share one VM
 
-(play :live-lead :c4)
-```
+Signals do not cross VMs. Synths that exchange signals inside Sointu therefore form a *coupled group* that must fit in one 32-voice VM:
 
-`install-patch!` replaces the registry; use the keyword `:live-lead` because this low-level form does not create a `live-lead` var. Alternatively, use `remove-synth!` and smaller `defsynth` definitions while keeping the aggregate at or below 32. The last installed synth cannot be removed, so a replacement patch is usually simpler.
+- an `in` on channel *c* couples with every synth writing channel *c* through `aux`, `outaux`, or `out`. **`out` and `outaux` write channels 0/1**, so an `in` on channel 0 or 1 (reading the main output) couples with every synth using `out`;
+- a `send` targeting another synth couples the two;
+- a synth that contains an enabled `in`, or a `send` with a non-zero `:voice`, can have voices reading each other's signal, so it is never sliced and must itself fit in 32 voices.
 
-Ways to work within the budget:
+Disabled units are ignored. A group over 32 voices is rejected with `:coupled-group-voice-limit-exceeded`, which names the synths, and the running patch stays unchanged. To fix it, route effects through private `aux` channels 2–6 instead of the main bus, lower the group's `:voices`, or move independent synths out of the group.
 
-- assign realistic polyphony per instrument instead of reserving voices for every possible note;
+Ways to use fewer voices:
+
+- assign realistic polyphony per instrument instead of reserving voices for every possible note. Configured voices cost CPU even when silent, because Sointu executes every voice of a VM: 64 voices cost about twice as much as 32;
 - use shorter `:dur` values (or explicit `release`) so reservations end sooner, and shorter envelope releases so later reuse is less likely to truncate a tail;
 - allow the deterministic allocator to steal the oldest note when an instrument's voice allocation is exhausted;
 - use several oscillators or oscillator `:unison` inside one voice for layered/unison sound. They share one note and gate and are not independently playable.
 
-There is no in-patch encoding trick that provides 33 independently gated voices. More than 32 requires multiple Sointu VM instances and mixing their stereo outputs. Current `lgs` owns one instance and does not transparently shard scheduling across engines.
+Every Sointu instrument needs at least one voice, so a global-effects instrument still costs a voice. Because instruments are placed whole or in slices, more instruments fit than before: up to 64 instruments and 256 voices per patch.
 
-> **Planned:** `lgs` will compile one logical patch into several ≤ 32-voice Sointu VMs, render them in lockstep, and mix them sample-accurately, so `(defsynth pad {:voices 64} ...)` works unchanged. Instruments coupled through `aux`/`in`/cross-instrument `send` must still share one VM. See [multi-instance engine](multi-instance-engine.md). Until that work lands, use the workarounds below. For now, render synchronized stems separately and mix them in a DAW/audio tool, or run multiple real-time processes and let the system mixer combine them; separate real-time processes do not provide sample-aligned shared scheduling. Native multi-engine support would require engine, allocator, routing, control, and trace changes—not merely a larger `:voices` value.
-
-Sointu also requires every instrument to have at least one voice, so a zero-voice global-effects instrument cannot preserve the budget. Put shared processing in an existing instrument when its signal flow permits, reserve one voice for an explicitly routed effects instrument, or apply the effect while mixing stems. Because each instrument consumes at least one voice, the 32-voice limit also makes more than 32 instruments impossible in one patch.
+Patches that must also run in Sointu's native or WebAssembly players are still limited to one 32-voice VM. Go callers can use `patch.NewSingleVMCompiler()` to enforce that limit.
 
 ## Units and bytecode
 

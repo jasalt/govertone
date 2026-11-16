@@ -18,11 +18,11 @@ For `[F,F+N)`, the engine renders to the next event, applies every event at that
 
 Allocation chooses the lowest voice whose reservation ended before the new start. If none is free it steals the oldest start, ties resolving to the lowest voice. Handles carry generation, ID and voice epoch. Engine release events only act when that ID still owns the voice, so a stale release cannot stop its replacement. Future events resolve symbolic instrument plus voice offset through the currently installed layout.
 
-## Planned: multiple Sointu instances
+## Multiple Sointu instances
 
-The engine currently owns one Sointu VM, so the aggregate patch is limited to 32 voices. The accepted direction is to keep logical instruments and voices everywhere above the engine and to compile the logical patch into ≤ 32-voice shards. Each shard runs in its own VM; all shards render in lockstep at the same event-split frames and are summed in a fixed order. A patch that fits in one VM stays on one shard and renders identically. See [multi-instance engine](multi-instance-engine.md).
+One Sointu VM holds 32 voices. Logical instruments and voices are used everywhere above the engine: in the scheduler, allocator, handles, controls, automation, and Lisp. The compiler plans the logical patch into ≤ 32-voice shards (`CompiledPatch.Shards`, `VoiceMap`). The engine owns one VM per shard and translates a logical voice to `(shard, local voice)` only when it triggers, releases, or controls a VM. All shards render at the same event-split frames and are summed in shard order. A patch that fits one VM stays on one shard and renders exactly as before. Patch updates diff shards by fingerprint: only changed shards are updated, new VMs are built before the render lock is taken, and surplus VMs are closed. See [multi-instance engine](multi-instance-engine.md).
 
-Shard mixing stays inside the engine so exact-frame timing and block-size invariance are preserved. The single mixed float32 output then goes to a sink: an offline WAV, the current Sointu Oto player, or, planned after the let-go v1.14 upgrade (#27), one stream on let-go's `*audio*` mixer so the process shares a single audio device. See [mixing and output sinks](multi-instance-engine.md#4a-mixing-and-output-sinks).
+Shard mixing stays inside the engine so exact-frame timing and block-size invariance are preserved. The single mixed float32 output then goes to a sink (`internal/audio/sink.go`): an offline buffer or WAV, the Sointu Oto player (`"oto"`, the default), or, planned after the let-go v1.14 upgrade (#27), one stream on let-go's `*audio*` mixer so the process shares a single audio device. See [mixing and output sinks](multi-instance-engine.md#4a-mixing-and-output-sinks).
 
 ## Shutdown
 

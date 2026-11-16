@@ -29,6 +29,7 @@ render-fixtures: build
 	$(LGS) render --input testdata/programs/scale.lg --output out/fixtures/scale.wav --duration 4s --report out/fixtures/scale.json --event-trace out/fixtures/scale-events.json
 	$(LGS) render --input testdata/programs/chord.lg --output out/fixtures/chord.wav --duration 2s --report out/fixtures/chord.json --event-trace out/fixtures/chord-events.json
 	$(LGS) render --input testdata/programs/timing.lg --output out/fixtures/timing.wav --duration 4s --report out/fixtures/timing.json --event-trace out/fixtures/timing-events.json
+	$(LGS) render --input testdata/programs/wide-pad.lg --output out/fixtures/wide-pad.wav --duration 6s --report out/fixtures/wide-pad.json --event-trace out/fixtures/wide-pad-events.json
 	$(LGS) render --input testdata/programs/dynamic-synth.lg --output out/fixtures/dynamic-synth.wav --duration 2s --tail 1s --report out/fixtures/dynamic-synth.json --event-trace out/fixtures/dynamic-synth-events.json --patch-trace out/fixtures/dynamic-synth-patches.json
 
 analyze-fixtures: render-fixtures

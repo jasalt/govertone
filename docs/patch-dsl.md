@@ -14,7 +14,7 @@ Phase 2 turns every instrument, including the original `:sine`, `:lead`, and `:b
   (out {:gain 70}))
 ```
 
-The macro installs the candidate and binds `soft-lead` to a printable synth descriptor. Both `(play soft-lead :c4)` and `(play :soft-lead :c4)` resolve the current layout. For an unqualified symbol, its symbolic ID is the symbol name. `{:id :demo/soft-lead}` overrides that ID. `:voices` is mandatory and the aggregate Sointu limit is 32—not 32 per synth. The startup instruments consume 24 voices. See [Sointu restrictions and workarounds](sointu-restrictions.md) for replacing the startup patch, budgeting polyphony, and multi-instance alternatives.
+The macro installs the candidate and binds `soft-lead` to a printable synth descriptor. Both `(play soft-lead :c4)` and `(play :soft-lead :c4)` resolve the current layout. For an unqualified symbol, its symbolic ID is the symbol name. `{:id :demo/soft-lead}` overrides that ID. `:voices` is mandatory: 1–128 per synth and 256 per patch. One Sointu VM holds 32 voices, so `lgs` splits larger patches across VMs, but synths coupled through `aux`/`in`/cross-synth `send` must share one VM. The startup instruments consume 24 voices. See [Sointu restrictions and workarounds](sointu-restrictions.md).
 
 Reevaluation retains the first-registration position. A changed aggregate increments the generation exactly once. Byte-identical normalized definitions are elided and return `:changed false`. Failed construction, stack analysis, routing, upstream compilation, or update leaves the prior registry generation and var value intact.
 
@@ -50,10 +50,10 @@ Cross-instrument form is `(ref :instrument-id :unit-id :parameter)`. Explicit ID
 ## Registry and introspection
 
 * `(synths)` lists installed definitions.
-* `(synth-info synth)` reports the current generation-specific layout.
+* `(synth-info synth)` reports the current generation-specific layout, including `:shards`: the Sointu VMs that run its voices.
 * `(synth-form synth)` returns normalized data.
 * `(synth-fingerprint synth)` and `(patch-fingerprint)` return SHA-256 identifiers.
-* `(patch-info)` reports generation, counts, and pending state.
+* `(patch-info)` reports generation, counts, pending state, `:voice-budget`, and `:shards` (the VM layout).
 * `(remove-synth! synth)` transactionally removes a definition. The last synth cannot be removed.
 
 Numeric index and first-voice fields are diagnostics only.

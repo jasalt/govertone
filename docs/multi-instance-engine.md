@@ -1,6 +1,6 @@
 # Multi-instance Sointu engine (transparent voice sharding)
 
-Status: **accepted design; step 1 (planner) implemented, engine pending** — tracked in [#29](https://github.com/jasalt/govertone/issues/29). This document records the architectural decision. Until #29 is closed, the single-VM limits and workarounds in [Sointu restrictions](sointu-restrictions.md) remain in effect.
+Status: **implemented** (planner, engine, updates, introspection), tracked in [#29](https://github.com/jasalt/govertone/issues/29). The let-go `*audio*` sink (section 4a) is follow-up work in #27. User-facing limits and workarounds are in [Sointu restrictions](sointu-restrictions.md).
 
 ## Problem
 
@@ -180,13 +180,28 @@ User code does not change:
 
 ## Implementation status
 
-**Step 1, the planner, is done** (`internal/patch/shards.go`, tests in `shards_test.go`):
+**Planner** (`internal/patch/shards.go`):
 
-- `CompiledPatch.Shards` and `CompiledPatch.VoiceMap` are produced for every compile. Each shard has its own validated Sointu patch, shard-local bindings and hard-release operands, a fingerprint, and a seed.
-- When one shard is used, `CompiledPatch.Patch`, `Bindings`, and hard-release operands are identical to the pre-sharding values. `TestShardSingleVMIdentity` and `TestShardBindingsMatchSingleVM` check this. A multi-shard compile sets `Patch` to `nil`, so it cannot be passed to a single VM by mistake.
-- `NewCompiler()` still has `MaxShards = 1`, so the defaults stay at 32 voices per synth and in total. The engine still owns one VM, so user-visible limits have not changed. `NewShardedCompiler()` applies the planned limits: 128 per synth, 256 total, and 16 VMs. Step 2 makes it the default.
-- `NewInstrument` now accepts up to 128 voices (`MaxInstrumentVoices`). The compiler enforces the active per-synth limit with `invalid-voice-count`.
-- Coupling rules beyond section 2: an instrument containing an enabled `in` unit is never sliced, because its voices may read each other's aux writes. Disabled units are ignored for coupling.
+- Every compile produces `CompiledPatch.Shards` and `VoiceMap`. Each shard has a validated Sointu patch, shard-local bindings and hard-release operands, a fingerprint, and a seed. With one shard, `Patch`, `Bindings`, and the operands are identical to the pre-sharding output. A multi-shard compile sets `Patch` to `nil`, so it cannot reach a single VM by mistake.
+- `NewCompiler()` allows 128 voices per synth, 256 per patch, and 16 VMs. `NewSingleVMCompiler()` keeps the former limits of one VM and 32 voices, for patches that must also run in native or WebAssembly Sointu players. `NewInstrument` accepts up to `MaxInstrumentVoices` (128).
+- Coupling rules beyond section 2: an instrument with an enabled `in` unit is never sliced, because its voices may read each other's aux writes. Disabled units are ignored. A main-bus `in` diagnostic explains that it couples with every `out` writer.
+
+**Engine** (`internal/audio/shards.go`, `engine.go`, `controlled_synth.go`):
+
+- The engine has one `engineShard` per VM. A logical `owners` slice and `voiceMap` dispatch trigger, release, stop-all, voice controls, and hard release. Instrument controls are written to every shard that hosts the instrument. `ControlBindings()` still returns the logical table.
+- Shards render the same frames and are summed in index order through a 4096-frame scratch buffer allocated control-side. A single shard renders directly into `dst`. `TestShardedRenderDoesNotAllocate` checks the audio path.
+- `GoSynth.SetRandomSeed` is in the vendored VM patch. Shard *n* uses `ShardSeed(n)`, and shard 0 keeps seed 1.
+- Event traces add `shard` and `local_voice` when more than one VM runs, so single-VM traces are byte-identical. Patch traces add `old_shards`, `new_shards`, `updated_shards`, `added_shards`, and `dropped_shards`.
+
+**Updates** (`internal/audio/patch_update.go`): shards are diffed by fingerprint, and changed shards are updated in place. New VMs are built before the render lock is taken, and surplus VMs are closed. If one shard's `Update` fails, the shards already updated are rolled back. Handle policy is still invalidate-all.
+
+**API:** `(patch-info)` reports `:shards` and `:voice-budget`, and `(synths)` and `(synth-info)` report `:shards` per synth.
+
+**Verification:**
+
+- All earlier fixture WAVs and event, control, and automation traces are byte-identical to the build before sharding.
+- A 64-voice synth on 2 VMs matches 64 separately rendered notes within 1e-5, and its output is bit-identical across block sizes 64–5000.
+- Benchmark, 512-frame block with all voices sounding: 64 voices on 2 VMs take about 6.6 ms, against 3.3 ms for 32 voices on 1 VM. Cost is linear in voice count and within the 10 % budget per voice.
 
 ## Implementation plan
 
