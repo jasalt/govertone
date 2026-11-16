@@ -372,6 +372,12 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 					u.Parameters[name] = cloneParameter(*parameterSchema.Default)
 				}
 			}
+			// color is the pulse duty cycle: the shared default of 128 would
+			// hold a pulse high (constant DC), so an unset pulse color is a
+			// square wave, as in Sointu's tracker.
+			if u.Type == "oscillator" && !provided["color"] && u.Parameters["type"].Enum == "pulse" {
+				u.Parameters["color"] = IntParam(64)
+			}
 			normalizeVirtualParameters(&u)
 			in.Units = append(in.Units, u)
 		}

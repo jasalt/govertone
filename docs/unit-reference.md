@@ -47,7 +47,7 @@ Stack counts below are scalar slots; stereo uses two slots. `source` pushes 1/2,
 
 ### `oscillator`
 
-`type` is one of `:sine`, `:saw` (`:trisaw` alias), `:pulse`, `:gate`, or `:sample`. Defaults: type sine, transpose 64, detune 64, color 128, shape 64, gain 128. `lfo` is boolean and `unison` is 0–3. `:pitch` aliases `:transpose`.
+`type` is one of `:sine`, `:saw` (`:trisaw` alias), `:pulse`, `:gate`, or `:sample`. Defaults: type sine, transpose 64, detune 64, color 128 (64 for `:pulse`, where color is the duty cycle and 128 would be constant DC), shape 64, gain 128. `lfo` is boolean and `unison` is 0–3. `:pitch` aliases `:transpose`.
 
 ### `filter`
 

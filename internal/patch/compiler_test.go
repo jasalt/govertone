@@ -177,3 +177,19 @@ func TestEverySchemaHasUpstreamUnit(t *testing.T) {
 		}
 	}
 }
+
+// An unset pulse color is a 50% duty cycle. Sointu's color 128 is a 100%
+// duty cycle, which is constant DC rather than a pulse wave.
+func TestPulseDefaultsToSquareWave(t *testing.T) {
+	for kind, want := range map[string]int{"pulse": 64, "sine": 128, "saw": 128} {
+		compiled := compileSpecs(t, minimal(t, "a", kind, 1))
+		if got := compiled.Patch[0].Units[1].Parameters["color"]; got != want {
+			t.Fatalf("%s color = %d, want %d", kind, got, want)
+		}
+	}
+	explicit := minimal(t, "a", "pulse", 1)
+	explicit.Units[1].Parameters["color"] = IntParam(128)
+	if got := compileSpecs(t, explicit).Patch[0].Units[1].Parameters["color"]; got != 128 {
+		t.Fatalf("explicit pulse color = %d", got)
+	}
+}
