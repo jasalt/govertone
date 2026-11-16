@@ -721,7 +721,14 @@ func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate, re
 	}
 	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed, strategy, request.fade)
 	if err != nil {
+		r.log.Error("patch transition failed", "old_generation", update.BaseGeneration, "error", err)
 		return update.BaseGeneration, "", err
+	}
+	info := r.engine.TransitionInfo()
+	r.log.Debug("patch transition", "transition_strategy", result.Strategy, "old_generation", update.BaseGeneration, "new_generation", result.Generation,
+		"crossfade_frames", info.Last.CrossfadeFrames, "changed", update.ChangedIDs, "invalidated_handles", result.InvalidatedHandles, "frame", result.AppliedFrame)
+	for _, warning := range info.Warnings {
+		r.log.Warn(warning, "transition_strategy", result.Strategy, "new_generation", result.Generation)
 	}
 	if err = r.patchRegistry.Commit(update); err != nil {
 		return update.BaseGeneration, "", err

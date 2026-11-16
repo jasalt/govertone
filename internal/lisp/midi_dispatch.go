@@ -178,6 +178,9 @@ func (r *Runtime) DispatchMIDI(e midi.Event, conv *midi.Converter, now uint64) {
 		s.stats.MaxLateness = max(s.stats.MaxLateness, place.LateFrames)
 	}
 	entry := MIDITraceEntry{Device: e.Device, Message: e.Message.String(), Frame: place.Frame, Late: place.Late, LateFrames: place.LateFrames}
+	if place.Late {
+		r.log.Debug("late MIDI", "midi_device", e.Device, "midi_channel", e.Message.Channel, "midi_message", entry.Message, "midi_lateness_frames", place.LateFrames)
+	}
 	handled := false
 	for _, b := range s.binds {
 		if !b.active(s) || !b.matches(e.Device, e.Message) {
@@ -330,9 +333,11 @@ func (r *Runtime) midiDeviceLost(s *midiState, device string, frame uint64, caus
 	s.lost[device] = true
 	released := r.releaseMIDIOwned(s, frame, "device lost", func(k ownerKey) bool { return k.device == device })
 	s.record(MIDITraceEntry{Device: device, Frame: frame, Message: "device lost", Action: "device-lost", Detail: fmt.Sprintf("%s; released %d notes", cause, released)})
+	r.log.Warn("MIDI device lost", "midi_device", device, "cause", cause, "released_notes", released, "frame", frame)
 }
 
 func (r *Runtime) midiDeviceFound(s *midiState, device string, frame uint64) {
 	delete(s.lost, device)
 	s.record(MIDITraceEntry{Device: device, Frame: frame, Message: "device connected", Action: "device-connected"})
+	r.log.Info("MIDI device connected", "midi_device", device, "frame", frame)
 }

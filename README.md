@@ -183,7 +183,7 @@ python3 scripts/validate-audio.py --input out/dynamic-synth.wav
 * `lgs doctor [--no-audio]`
 * `lgs version`
 
-The operational subcommands accept `--log-level error|warn|info|debug` and `--json-logs`. See:
+The operational subcommands (`render`, `repl`, `patch`, `doctor`) accept `--log-level error|warn|info|debug` and `--json-logs`. Logs go to stderr in key=value form, or as JSON with `--json-logs` (see [architecture](docs/architecture.md#logging)). See:
 
 ### User guides
 

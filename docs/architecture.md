@@ -26,6 +26,24 @@ One Sointu VM holds 32 voices. Logical instruments and voices are used everywher
 
 Shard mixing stays inside the engine so exact-frame timing and block-size invariance are preserved. The single mixed float32 output then goes to a sink (`internal/audio/sink.go`): an offline buffer or WAV, the Sointu Oto player (`"oto"`, the default), or, planned after the let-go v1.14 upgrade (#27), one stream on let-go's `*audio*` mixer so the process shares a single audio device. See [mixing and output sinks](multi-instance-engine.md#4a-mixing-and-output-sinks).
 
+## Logging
+
+Structured logs use `log/slog` and go to stderr. Only control goroutines write them; the audio thread never logs. Field names follow phase-3.md §34.
+
+| Level | Record | Fields |
+|---|---|---|
+| warn | hard swap that cut sounding notes; MIDI device lost | `transition_strategy`, `new_generation`; `midi_device`, `cause`, `released_notes` |
+| info | MIDI device connected | `midi_device`, `frame` |
+| error | patch transition failed | `old_generation`, `error` |
+| debug | patch transition | `transition_strategy`, `old_generation`, `new_generation`, `crossfade_frames`, `changed`, `invalidated_handles`, `frame` |
+| debug | control scheduled | `event_id`, `control_target`, `parameter_id`, `control_value`, `control_scope`, `frame` |
+| debug | automation / bus automation scheduled | `automation_id`, `control_target` or `bus_id`, `parameter_id`, `automation_curve`, `automation_start_frame`, `automation_end_frame` |
+| debug | bus set scheduled | `event_id`, `bus_id`, `control_value`, `frame` |
+| debug | late MIDI | `midi_device`, `midi_channel`, `midi_message`, `midi_lateness_frames` |
+| debug | nREPL request | `nrepl_session`, `nrepl_operation`, `nrepl_id` |
+
+`event_id` and `automation_id` are the scheduler IDs that also appear in the event, control and automation traces. Per-event detail (applied frames, lateness, rejections) stays in those traces and in the run statistics rather than in logs.
+
 ## Shutdown
 
 Shutdown is idempotent at component level: stop scheduling, enqueue releases with `stop-all`, close Oto, stop the transport, then close Sointu. Offline rendering always stops at timeline plus tail even if a voice sustains.

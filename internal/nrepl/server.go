@@ -193,6 +193,7 @@ func (s *Server) handleConn(conn net.Conn) {
 
 func (s *Server) handle(conn net.Conn, msg map[string]any) {
 	op, id, sessionID := msgString(msg, "op"), msgString(msg, "id"), msgString(msg, "session")
+	s.runtime.Logger().Debug("nREPL request", "nrepl_session", sessionID, "nrepl_operation", op, "nrepl_id", id)
 	switch op {
 	case "clone":
 		s.clone(conn, id)

@@ -24,7 +24,7 @@ func loadProgram(input string) (*app.App, int) {
 		fmt.Fprintln(os.Stderr, err)
 		return nil, 3
 	}
-	a, err := app.New(io.Discard, os.Stderr)
+	a, err := newApp(io.Discard, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return nil, 5

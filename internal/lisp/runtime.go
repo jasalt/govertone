@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"sort"
@@ -33,7 +34,21 @@ type Runtime struct {
 	stderr        *routingWriter
 	atBeat        *clock.Beat
 	midi          *midiState
+	// log receives structured control-side logs (phase-3.md §34). It is
+	// never used on the audio thread. Discarded unless SetLogger is called.
+	log *slog.Logger
 }
+
+// SetLogger directs structured logs; nil discards them.
+func (r *Runtime) SetLogger(l *slog.Logger) {
+	if l == nil {
+		l = slog.New(slog.DiscardHandler)
+	}
+	r.log = l
+}
+
+// Logger returns the structured logger.
+func (r *Runtime) Logger() *slog.Logger { return r.log }
 
 type routingWriter struct {
 	mu            sync.RWMutex
@@ -79,7 +94,7 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 	}
 	// music.core defines transport `now`, intentionally shadowing core/now.
 	rt.NS("music.core").Exclude("now")
-	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry, stdout: stdout, stderr: stderr}
+	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry, stdout: stdout, stderr: stderr, log: slog.New(slog.DiscardHandler)}
 	defs := map[string]func([]vm.Value) (vm.Value, error){"play": r.play, "release": r.release, "at": r.at, "tempo": r.tempo, "now": r.now, "stop-all": r.stopAll, "instruments": r.instrumentsFn, "note-number": r.noteNumber, "load-file": r.loadFile}
 	for name, f := range defs {
 		v, e := vm.NativeFnType.Wrap(f)

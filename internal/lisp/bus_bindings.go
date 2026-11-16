@@ -139,6 +139,7 @@ func (r *Runtime) busSetFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, fmt.Errorf("control-queue-full: %w", err)
 	}
+	r.log.Debug("bus set scheduled", "event_id", added.ID, "bus_id", id, "control_value", value, "frame", frame)
 	return mapOf(vm.Keyword("bus-event"), vm.Int(added.ID), vm.Keyword("bus"), vm.Keyword(id), vm.Keyword("value"), vm.Float(value), vm.Keyword("scheduled-frame"), vm.Int(frame)), nil
 }
 
@@ -185,6 +186,7 @@ func (r *Runtime) busRampFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, fmt.Errorf("automation-limit-exceeded: %w", err)
 	}
+	r.log.Debug("bus automation scheduled", "automation_id", added.ID, "bus_id", id, "automation_curve", curve, "automation_start_frame", startFrame, "automation_end_frame", endFrame)
 	return mapOf(vm.Keyword("automation"), vm.Int(added.ID), vm.Keyword("bus"), vm.Keyword(id), vm.Keyword("start-frame"), vm.Int(startFrame), vm.Keyword("end-frame"), vm.Int(endFrame), vm.Keyword("curve"), vm.Keyword(curve)), nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -67,18 +68,41 @@ func run(args []string) int {
 		return 2
 	}
 }
+
+// jsonLogs is set by --json-logs; validateCommon builds logger from it and
+// --log-level. Only control goroutines log; the audio thread never does.
+var (
+	jsonLogs *bool
+	logger   = slog.New(slog.DiscardHandler)
+)
+
 func common(fs *flag.FlagSet) (*bool, *string, *bool) {
 	noAudio := fs.Bool("no-audio", false, "do not open an audio device")
 	level := fs.String("log-level", "info", "error|warn|info|debug")
-	jsonLogs := fs.Bool("json-logs", false, "emit JSON logs")
+	jsonLogs = fs.Bool("json-logs", false, "emit JSON logs (key=value text otherwise) on stderr")
 	return noAudio, level, jsonLogs
 }
 func validateCommon(level string) error {
-	switch level {
-	case "error", "warn", "info", "debug":
-		return nil
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(level)); err != nil || (level != "error" && level != "warn" && level != "info" && level != "debug") {
+		return fmt.Errorf("invalid --log-level %q", level)
 	}
-	return fmt.Errorf("invalid --log-level %q", level)
+	options := &slog.HandlerOptions{Level: l}
+	if jsonLogs != nil && *jsonLogs {
+		logger = slog.New(slog.NewJSONHandler(os.Stderr, options))
+	} else {
+		logger = slog.New(slog.NewTextHandler(os.Stderr, options))
+	}
+	return nil
+}
+
+// newApp creates the application with the command's structured logger.
+func newApp(out, errOut io.Writer) (*app.App, error) {
+	a, err := app.New(out, errOut)
+	if err == nil {
+		a.Lisp.SetLogger(logger)
+	}
+	return a, err
 }
 func renderCommand(args []string) int {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
@@ -132,7 +156,7 @@ func renderCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 3
 	}
-	a, err := app.New(io.Discard, os.Stderr)
+	a, err := newApp(io.Discard, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 5
@@ -312,7 +336,7 @@ func patchCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 3
 	}
-	a, err := app.New(io.Discard, os.Stderr)
+	a, err := newApp(io.Discard, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 5
@@ -369,7 +393,7 @@ func replCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "repl --midi-latency must be between 0 and 1s")
 		return 2
 	}
-	a, err := app.New(os.Stdout, os.Stderr)
+	a, err := newApp(os.Stdout, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -449,7 +473,7 @@ func doctorCommand(args []string) int {
 		return 2
 	}
 	fmt.Println(versionText())
-	a, err := app.New(io.Discard, os.Stderr)
+	a, err := newApp(io.Discard, os.Stderr)
 	if err != nil {
 		fmt.Println("offline: FAIL:", err)
 		return 1
@@ -528,7 +552,7 @@ func doctorMIDI() {
 // checks the scheduler frame, so doctor proves the replay path without
 // hardware.
 func checkMIDIReplay() error {
-	a, err := app.New(io.Discard, io.Discard)
+	a, err := newApp(io.Discard, io.Discard)
 	if err != nil {
 		return err
 	}

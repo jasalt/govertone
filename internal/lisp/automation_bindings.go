@@ -88,6 +88,7 @@ func (r *Runtime) rampFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, fmt.Errorf("automation-limit-exceeded: %w", err)
 	}
+	r.log.Debug("automation scheduled", "automation_id", added.ID, "control_target", target.instrument, "parameter_id", parameterName, "automation_curve", curve, "automation_start_frame", startFrame, "automation_end_frame", endFrame)
 	return mapOf(vm.Keyword("automation"), vm.Int(added.ID), vm.Keyword("target"), vm.Keyword(target.instrument), vm.Keyword("parameter"), vm.Keyword(parameterName), vm.Keyword("start-frame"), vm.Int(startFrame), vm.Keyword("end-frame"), vm.Int(endFrame), vm.Keyword("curve"), vm.Keyword(curve)), nil
 }
 

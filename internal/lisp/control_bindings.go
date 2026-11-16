@@ -158,6 +158,7 @@ func (r *Runtime) ctlFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, fmt.Errorf("control-queue-full: %w", err)
 	}
+	r.log.Debug("control scheduled", "event_id", added.ID, "control_target", target.instrument, "parameter_id", parameterName, "control_value", value, "control_scope", descriptor.Scope, "frame", frame)
 	return mapOf(vm.Keyword("control-event"), vm.Int(added.ID), vm.Keyword("target"), vm.Keyword(target.instrument), vm.Keyword("parameter"), vm.Keyword(parameterName), vm.Keyword("value"), vm.Float(value), vm.Keyword("scheduled-frame"), vm.Int(frame)), nil
 }
 

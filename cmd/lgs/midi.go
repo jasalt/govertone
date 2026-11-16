@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/audio"
 	"github.com/example/letgo-sointu/internal/clock"
 	"github.com/example/letgo-sointu/internal/midi"
@@ -181,7 +180,7 @@ func midiReplayCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 3
 	}
-	a, err := app.New(io.Discard, os.Stderr)
+	a, err := newApp(io.Discard, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 5
