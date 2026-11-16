@@ -9,6 +9,7 @@ import (
 	"github.com/example/letgo-sointu/internal/clock"
 	"github.com/example/letgo-sointu/internal/instruments"
 	musiclisp "github.com/example/letgo-sointu/internal/lisp"
+	"github.com/example/letgo-sointu/internal/midi"
 	patchmodel "github.com/example/letgo-sointu/internal/patch"
 	"github.com/example/letgo-sointu/internal/scheduler"
 )
@@ -45,6 +46,11 @@ func New(out, errOut io.Writer) (*App, error) {
 	if err != nil {
 		engine.Close()
 		return nil, fmt.Errorf("initialize let-go: %w", err)
+	}
+	if names := midi.Backends(); len(names) > 0 {
+		if backend, e := midi.LookupBackend(names[0]); e == nil {
+			runtime.SetMIDIBackend(backend)
+		}
 	}
 	return &App{Provider: p, Registry: reg, Allocator: alloc, Queue: q, Transport: t, Engine: engine, Lisp: runtime, PatchRegistry: p}, nil
 }
