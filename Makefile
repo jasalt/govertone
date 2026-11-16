@@ -1,7 +1,7 @@
 GO ?= go
 LGS := ./out/lgs
 
-.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-midi test-transitions test-nrepl test-fuzz test-stability benchmark benchmark-controls benchmark-crossfade acceptance-phase3 lint doctor render-fixtures analyze-fixtures acceptance clean
+.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-midi test-transitions test-nrepl test-fuzz test-stability benchmark benchmark-controls benchmark-crossfade acceptance-phase3 demo lint doctor render-fixtures analyze-fixtures acceptance clean
 bootstrap:
 	./scripts/bootstrap-fedora.sh
 
@@ -114,7 +114,14 @@ benchmark-crossfade:
 benchmark: benchmark-controls benchmark-crossfade
 	$(GO) test ./internal/audio -run '^$$' -bench Engine -benchmem | tee out/benchmark-engine.txt
 
-acceptance-phase3: test-controls test-automation test-midi test-transitions test-nrepl test-fuzz
+# Phase 3 §43 demonstration: the spec session in three stages, with every
+# trace, checked by scripts/validate-demo.py. Output in out/demo/.
+demo: build
+	mkdir -p out/demo
+	$(LGS) render --input testdata/demo/session.lg --then testdata/demo/bus.lg --then-at 3.25s --then testdata/demo/redefine.lg --then-at 6s --output out/demo/demo.wav --duration 8s --tail 1s --report out/demo/report.json --event-trace out/demo/events.json --patch-trace out/demo/patches.json --control-trace out/demo/controls.json --automation-trace out/demo/automation.json --midi-trace out/demo/midi.json --transition-trace out/demo/transition.json
+	python3 scripts/validate-demo.py > out/demo/proof.txt; status=$$?; cat out/demo/proof.txt; exit $$status
+
+acceptance-phase3: test-controls test-automation test-midi test-transitions test-nrepl test-fuzz demo
 
 acceptance: lint test test-race test-patch test-audio acceptance-phase3 doctor
 

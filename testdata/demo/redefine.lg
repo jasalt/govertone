@@ -1,0 +1,47 @@
+;; Phase 3 §43 demonstration, stage 3 (t = 6 s): an incompatible
+;; redefinition (pulse oscillator plus distortion) that crossfades over
+;; 20 ms. The bus mapping, the MIDI bindings and the cutoff value migrate
+;; by name.
+
+(defsynth performance-lead
+  {:voices 8
+   :transition :crossfade
+   :crossfade 0.02
+   :params
+   {:cutoff
+    {:default 48
+     :min 0
+     :max 128
+     :scope :instrument
+     :smoothing 0.01}
+
+    :resonance
+    {:default 28
+     :min 0
+     :max 128
+     :scope :instrument}
+
+    :velocity
+    {:default 100
+     :min 0
+     :max 127
+     :scope :voice}}}
+
+  (envelope {:attack 3
+             :decay 32
+             :sustain 100
+             :release 40})
+
+  (oscillator {:type :pulse})
+
+  (mulp)
+
+  (distort {:drive 32})
+
+  (filter {:type :lowpass
+           :frequency (param :cutoff)
+           :resonance (param :resonance)})
+
+  (gain {:gain (param :velocity)})
+
+  (out {:gain 68}))

@@ -1,0 +1,10 @@
+# Phase 3 §43: the "Virtual Keyboard". Frames are at 44100 Hz; replay starts
+# at frame 0 because session.lg runs before rendering.
+{"frame":11025,"device":"Virtual Keyboard","type":"cc","channel":1,"control":74,"value":30}
+{"frame":22050,"device":"Virtual Keyboard","type":"cc","channel":1,"control":74,"value":64}
+{"frame":198450,"device":"Virtual Keyboard","type":"note-on","channel":1,"note":76,"velocity":96}
+{"frame":220500,"device":"Virtual Keyboard","type":"note-off","channel":1,"note":76,"velocity":0}
+{"frame":231525,"device":"Virtual Keyboard","type":"note-on","channel":1,"note":79,"velocity":110}
+{"frame":275625,"device":"Virtual Keyboard","type":"note-on","channel":1,"note":84,"velocity":110}
+{"frame":286650,"device":"Virtual Keyboard","type":"note-off","channel":1,"note":79,"velocity":0}
+{"frame":308700,"device":"Virtual Keyboard","type":"note-off","channel":1,"note":84,"velocity":0}

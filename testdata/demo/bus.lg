@@ -1,0 +1,15 @@
+;; Phase 3 §43 demonstration, stage 2 (t = 3.25 s): a control bus drives the
+;; cutoff. Mapping it applies the bus default (64) at once; bus-set! raises it
+;; to 82 at beat 8 (4 s).
+
+(defbus brightness
+  {:default 64
+   :min 0
+   :max 128})
+
+(map-control! brightness
+              :performance-lead
+              :cutoff)
+
+(bus-set! brightness 82 {:at 8})
+

@@ -1,0 +1,85 @@
+;; Phase 3 §43 demonstration, stage 1 of 3 (t = 0). The forms come verbatim
+;; from phase-3.md §43, split into stages. A mapped bus is authoritative over
+;; ctl, ramps and MIDI CC on the same parameter (docs/controls.md), so mapping
+;; the bus at t = 0, as the spec listing does, would mask the ramp and the CC.
+;;
+;;   0.00-4.00 s  note-a (A4, velocity 110). Cutoff ctl 64.
+;;   0.25/0.50 s  MIDI CC 74 sets the cutoff to 30, then back to 64.
+;;   1.00-3.00 s  smoothstep ramp of the cutoff, 64 -> 108.
+;;   3.25 s       stage 2 (bus.lg): the bus takes over the cutoff (64), then 82 at 4 s.
+;;   4.50-5.00 s  MIDI E5 under the bus.
+;;   5.25 s       MIDI G5 starts on the saw synth.
+;;   6.00 s       stage 3 (redefine.lg): pulse + distortion, 20 ms crossfade.
+;;   6.25-7.00 s  MIDI C6 on the redefined synth.
+
+(in-ns 'music.core)
+
+(defsynth performance-lead
+  {:voices 8
+   :params
+   {:cutoff
+    {:default 48
+     :min 0
+     :max 128
+     :scope :instrument
+     :smoothing 0.01}
+
+    :resonance
+    {:default 28
+     :min 0
+     :max 128
+     :scope :instrument}
+
+    :velocity
+    {:default 100
+     :min 0
+     :max 127
+     :scope :voice}}}
+
+  (envelope {:attack 3
+             :decay 32
+             :sustain 100
+             :release 40})
+
+  (oscillator {:type :saw})
+
+  (mulp)
+
+  (filter {:type :lowpass
+           :frequency (param :cutoff)
+           :resonance (param :resonance)})
+
+  (gain {:gain (param :velocity)})
+
+  (out {:gain 72}))
+
+(def note-a
+  (play :performance-lead
+        :a4
+        {:dur 8
+         :params {:velocity 110}}))
+
+(ctl :performance-lead :cutoff 64)
+
+(ramp :performance-lead
+      :cutoff
+      64
+      108
+      {:at 2
+       :dur 4
+       :curve :smoothstep})
+
+(midi-bind!
+  {:device "Virtual Keyboard"
+   :channel 1}
+  :performance-lead)
+
+(midi-cc-bind!
+  {:device "Virtual Keyboard"
+   :channel 1
+   :cc 74}
+  :performance-lead
+  :cutoff)
+
+
+(midi-replay! "testdata/demo/keyboard.midilog")
