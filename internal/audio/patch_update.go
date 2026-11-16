@@ -20,7 +20,11 @@ type PatchUpdateTrace struct {
 	ChangedInstruments []string `json:"changed_instruments,omitempty"`
 	RemovedInstruments []string `json:"removed_instruments,omitempty"`
 	InvalidatedHandles int      `json:"invalidated_handles"`
-	Result             string   `json:"result"`
+	// Strategy is the transition used: "in-place" keeps sounding notes and
+	// their handles, "hard-swap" releases them (phase-3.md §17.2).
+	Strategy         string `json:"strategy,omitempty"`
+	PreservedHandles int    `json:"preserved_handles,omitempty"`
+	Result           string `json:"result"`
 	// Shard detail: VM counts before and after, and which shard VMs were
 	// updated in place, constructed, or closed. Unlisted shards were
 	// untouched.
@@ -44,7 +48,10 @@ type PatchUpdateResult struct {
 	Generation         patchmodel.PatchGeneration
 	AppliedFrame       uint64
 	InvalidatedHandles int
-	Changed            bool
+	// PreservedHandles counts note handles still valid after an in-place
+	// update; the caller must then keep its allocator state.
+	PreservedHandles int
+	Changed          bool
 }
 
 // UpdatePatch is a synchronous acknowledgement protocol. All construction and
@@ -55,7 +62,12 @@ type PatchUpdateResult struct {
 // shards at an existing index are updated in place (Sointu keeps voice state
 // when the program is unchanged, as with the former single VM), new shards are
 // constructed control-side before the boundary, and surplus shards are closed.
-func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, changed, removed []patchmodel.InstrumentID) (PatchUpdateResult, error) {
+//
+// strategy comes from patchmodel.Diff. With TransitionInPlace and an
+// unchanged voice map, sounding notes keep playing and their handles stay
+// valid: Sointu keeps voice state because the opcode stream is unchanged.
+// Any other strategy releases every sounding note and invalidates handles.
+func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, changed, removed []patchmodel.InstrumentID, strategy patchmodel.TransitionStrategy) (PatchUpdateResult, error) {
 	if compiled == nil {
 		return PatchUpdateResult{}, fmt.Errorf("nil compiled patch")
 	}
@@ -68,7 +80,7 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 	oldGeneration := e.patchGeneration.Load()
 	oldFingerprint, _ := e.patchFingerprint.Load().(string)
 	if compiled.Fingerprint == oldFingerprint {
-		return PatchUpdateResult{patchmodel.PatchGeneration(oldGeneration), requestedFrame, 0, false}, nil
+		return PatchUpdateResult{Generation: patchmodel.PatchGeneration(oldGeneration), AppliedFrame: requestedFrame}, nil
 	}
 	// e.shards only changes under updateMu, so it can be read here.
 	current := len(e.shards)
@@ -110,6 +122,11 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 		if owner != 0 {
 			owned = append(owned, ownedVoice{e.voiceMap[voice], e.instrumentAtVoice(voice)})
 		}
+	}
+	preserve := strategy == patchmodel.TransitionInPlace && len(compiled.Shards) == current && slices.Equal(compiled.VoiceMap, e.voiceMap)
+	entry.Strategy = string(patchmodel.TransitionHardSwap)
+	if preserve {
+		entry.Strategy = string(patchmodel.TransitionInPlace)
 	}
 	var updated []int
 	for index := 0; index < min(current, len(compiled.Shards)); index++ {
@@ -166,20 +183,33 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 		e.layout[id] = instruments.Definition{ID: id, FirstVoice: instruments.VoiceID(instrument.FirstVoice), Voices: instrument.NumVoices}
 	}
 	e.initializeHardReleaseControls(compiled)
-	for _, voice := range owned {
-		if voice.address.Shard < len(e.shards) {
-			e.releaseLocal(voice.address, shardInstrumentAt(compiled, voice.address))
+	result := PatchUpdateResult{Generation: compiled.Generation, AppliedFrame: frame, Changed: true}
+	if preserve {
+		// Sounding voices of envelope-less instruments must stay audible.
+		for _, voice := range owned {
+			shard := e.shards[voice.address.Shard]
+			for _, operand := range e.hardReleaseOperands[shardInstrument{voice.address.Shard, voice.instrument}] {
+				shard.controlled.ClearControl(voice.address.Local, operand)
+			}
 		}
+		result.PreservedHandles = len(owned)
+	} else {
+		for _, voice := range owned {
+			if voice.address.Shard < len(e.shards) {
+				e.releaseLocal(voice.address, shardInstrumentAt(compiled, voice.address))
+			}
+		}
+		for voice := range e.owners {
+			e.owners[voice] = 0
+		}
+		result.InvalidatedHandles = len(owned)
 	}
-	for voice := range e.owners {
-		e.owners[voice] = 0
-	}
-	e.migrateControls(oldControls, uint64(frame), &entry)
-	entry.InvalidatedHandles = len(owned)
+	e.migrateControls(oldControls, uint64(frame), preserve, &entry)
+	entry.InvalidatedHandles, entry.PreservedHandles = result.InvalidatedHandles, result.PreservedHandles
 	e.patchGeneration.Store(uint64(compiled.Generation))
 	e.patchFingerprint.Store(compiled.Fingerprint)
 	e.recordPatchUpdate(entry)
-	return PatchUpdateResult{compiled.Generation, frame, len(owned), true}, nil
+	return result, nil
 }
 
 // shardInstrumentAt names the instrument hosting a local voice in the new plan.

@@ -101,3 +101,57 @@ func TestAutomationMigratesOrCancelsAcrossPatchUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An operand-only redefinition is applied in place: the sounding note keeps
+// playing, its handle stays valid, and voice controls carry over. A
+// structural change still releases it.
+func TestInPlaceUpdateKeepsSoundingNotes(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	pad := func(kind string, voices int) string {
+		return `(defsynth pad {:voices ` + strconv.Itoa(voices) + ` :params {:vel {:default 64 :min 0 :max 128 :scope :voice}}}
+  (envelope {:attack 0 :decay 64 :sustain 128 :release 64})
+  (oscillator {:type :` + kind + ` :gain (param :vel)}) (mulp) (out {:gain 64}))`
+	}
+	evalAll(t, a, pad("sine", 2), `(def n (play :pad :a4 {:at 0 :dur 8}))`, `(ctl n :vel 100)`)
+	if _, err = audio.RenderOffline(a.Engine, 4410, 512); err != nil {
+		t.Fatal(err)
+	}
+	evalAll(t, a, pad("saw", 2))
+	last := func() audio.PatchUpdateTrace {
+		updates := a.Engine.PatchTrace().Updates
+		return updates[len(updates)-1]
+	}
+	if u := last(); u.Strategy != "in-place" || u.PreservedHandles != 1 || u.InvalidatedHandles != 0 {
+		t.Fatalf("in-place trace %#v", u)
+	}
+	if v, err := a.Lisp.Eval(`(:value (control-value n :vel))`); err != nil || v.String() != "100.0" {
+		t.Fatalf("voice control after in-place update: %v %v", v, err)
+	}
+	out, err := audio.RenderOffline(a.Engine, 4410, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rmsOf(out[2205:]) < 0.01 {
+		t.Fatal("note went silent after an in-place update")
+	}
+	// Changing the voice count is structural: the note is released.
+	evalAll(t, a, pad("saw", 3))
+	if u := last(); u.Strategy != "hard-swap" || u.InvalidatedHandles != 1 {
+		t.Fatalf("hard-swap trace %#v", u)
+	}
+	if _, err := a.Lisp.Eval(`(ctl n :vel 10)`); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("handle survived a hard swap: %v", err)
+	}
+}
+
+func rmsOf(frames [][2]float32) float64 {
+	var sum float64
+	for _, f := range frames {
+		sum += float64(f[0]) * float64(f[0])
+	}
+	return math.Sqrt(sum / float64(len(frames)))
+}

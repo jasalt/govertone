@@ -15,7 +15,23 @@ A changed install increments generation by exactly one. An identical fingerprint
 
 Events contain an instrument ID and offset within that instrument, not only an absolute voice. At application they resolve through the current engine layout. Thus future notes use compatible redefinitions naturally. Removed IDs or offsets beyond a reduced voice count produce explicit failed trace entries.
 
-The current conservative compatibility policy invalidates every active handle after a changed aggregate patch and resets allocator ownership. Old release requests cannot affect new voices because IDs, generation, and voice epochs are checked by host ownership. Audible release migration and crossfades are deferred.
+## Change classes and strategy
+
+Each update is classified by `patch.Diff` (phase-3 §16). Every instrument is one of:
+
+| Class | Meaning |
+|---|---|
+| `unchanged` | identical definition |
+| `control-schema` | only named parameter descriptors (`:params` defaults, ranges, smoothing) changed |
+| `compatible` | same Sointu state layout; only unit parameter values changed (e.g. oscillator `:type`, filter frequency, gains) |
+| `incompatible` | position, voice count, unit sequence, stereo/disabled flags, send target or voice, or controlled ports changed |
+| `added` / `removed` | instrument appears or disappears |
+
+The update strategy, recorded as `strategy` in the patch trace:
+
+- **no-op**: identical fingerprint; the update is elided and the generation stays.
+- **in-place**: every instrument is `unchanged`, `control-schema` or `compatible`. Sointu keeps voice state because the opcode stream is unchanged, so **sounding notes keep playing, their handles stay valid**, and voice controls carry over (`preserved_handles`).
+- **hard-swap**: anything else. Sounding notes are released, every handle is invalidated, and allocator ownership is reset (`invalidated_handles`). Old release requests cannot affect new voices because IDs, generation, and voice epochs are checked by host ownership. Crossfaded transitions (#12) are not implemented yet.
 
 ## Control migration
 
@@ -28,7 +44,7 @@ Instrument-scoped control state is carried into the new generation by symbolic s
 | Scope changed to `:voice` | reset to default; lane cancelled |
 | Value outside the new range | reset to the new default; lane cancelled |
 
-Voice-scoped values end with their invalidated note handles. Changing a parameter's range or default alone counts as a patch change. The patch trace lists `migrated_controls`, `reset_controls` (with a reason), `migrated_automation` (lane IDs) and `cancelled_automation` (with a reason). A cancelled lane also gets a `cancel-patch-update` entry in the automation trace.
+Voice-scoped values follow the same rules for notes kept by an in-place update and otherwise end with their invalidated note handles. Changing a parameter's range or default alone counts as a patch change. The patch trace lists `migrated_controls`, `reset_controls` (with a reason), `migrated_automation` (lane IDs) and `cancelled_automation` (with a reason). A cancelled lane also gets a `cancel-patch-update` entry in the automation trace.
 
 ## Failure and rollback
 

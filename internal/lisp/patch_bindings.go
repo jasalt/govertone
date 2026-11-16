@@ -648,12 +648,18 @@ func (r *Runtime) installCandidate(update *patchmodel.PreparedRegistryUpdate) (p
 		}
 		return update.BaseGeneration, false, nil
 	}
-	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed)
+	diff := patchmodel.Diff(r.patchRegistry.Compiled(), update.Compiled)
+	result, err := r.engine.UpdatePatch(update.Compiled, r.transport.Tempo(), update.ChangedIDs, update.Removed, diff.Strategy)
 	if err != nil {
 		return update.BaseGeneration, false, err
 	}
 	if err = r.patchRegistry.Commit(update); err != nil {
 		return update.BaseGeneration, false, err
+	}
+	if result.PreservedHandles > 0 {
+		// In-place update: the voice layout is unchanged and sounding
+		// notes keep their handles, so the allocator keeps its state.
+		return result.Generation, true, nil
 	}
 	defs := map[instruments.InstrumentID]instruments.Definition{}
 	for _, id := range update.Compiled.Layout.OrderedIDs {
