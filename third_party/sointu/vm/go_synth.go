@@ -167,6 +167,20 @@ func (s *GoSynth) ParameterOperand(address ParameterAddress) (int, bool) {
 	return offset, ok
 }
 
+// hasControls reports whether any persistent control is set. Render checks
+// it once per call so uncontrolled patches skip the override lookups.
+func (s *GoSynth) hasControls() bool {
+	if len(s.instrumentControl) > 0 {
+		return true
+	}
+	for _, controls := range s.voiceControl {
+		if len(controls) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // SetRandomSeed sets the noise generator state. A new VM starts at seed 1, so
 // a host that runs several VMs side by side gives each a distinct seed to
 // keep their noise decorrelated. Zero would make the generator constant, so it
@@ -232,6 +246,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 		}
 	}()
 	var params [8]float32
+	controlled := s.hasControls()
 	stack := s.stack[:]
 	stack = append(stack, []float32{0, 0, 0, 0}...)
 	synth := &s.state
@@ -269,21 +284,32 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			voice := &voices[0]
 			unit := &units[0]
 			operandsAtTransform := operands
-			voiceIndex := len(s.state.voices) - len(voices)
-			for i := 0; i < tcount; i++ {
-				operandIndex := len(s.bytecode.Operands) - len(operands)
-				value := float32(operands[0])
-				if controlled, ok := s.instrumentControl[operandIndex]; ok {
-					value = controlled
+			if !controlled {
+				// Upstream's path, unchanged, when no control is set.
+				for i := 0; i < tcount; i++ {
+					params[i] = float32(operands[0])/128.0 + unit.ports[i]
+					unit.ports[i] = 0
+					operands = operands[1:]
 				}
-				if controls := s.voiceControl[voiceIndex]; controls != nil {
-					if controlled, ok := controls[operandIndex]; ok {
-						value = controlled
+			} else {
+				voiceIndex := len(s.state.voices) - len(voices)
+				for i := 0; i < tcount; i++ {
+					operandIndex := len(s.bytecode.Operands) - len(operands)
+					value := float32(operands[0])
+					if len(s.instrumentControl) > 0 {
+						if override, ok := s.instrumentControl[operandIndex]; ok {
+							value = override
+						}
 					}
+					if controls := s.voiceControl[voiceIndex]; len(controls) > 0 {
+						if override, ok := controls[operandIndex]; ok {
+							value = override
+						}
+					}
+					params[i] = value/128.0 + unit.ports[i]
+					unit.ports[i] = 0
+					operands = operands[1:]
 				}
-				params[i] = value/128.0 + unit.ports[i]
-				unit.ports[i] = 0
-				operands = operands[1:]
 			}
 			l := len(stack)
 			switch opNoStereo {
