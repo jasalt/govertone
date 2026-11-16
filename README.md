@@ -32,7 +32,7 @@ Content within this heading is (probably) the only human written text in the pro
 
 ## Progress (Phase 3 in progress)
 
-Phase 1 established the deterministic runtime, scheduler, fixed instruments, and audio validation. Phase 2 added typed patch construction, transactional live redefinition, symbolic routing, and `defsynth`. Phase 3 currently adds named instrument/voice parameters, persistent non-recompiling controls, exact-frame smoothing and automation, and bounded loopback-safe nREPL access. Control buses, MIDI, and crossfaded patch transitions remain Phase 3 work. The `phase1` Git tag identifies the completed Phase 1 baseline.
+Phase 1 established the deterministic runtime, scheduler, fixed instruments, and audio validation. Phase 2 added typed patch construction, transactional live redefinition, symbolic routing, and `defsynth`. Phase 3 currently adds named instrument/voice parameters, persistent non-recompiling controls, exact-frame smoothing and automation, and bounded loopback-safe nREPL access, control buses, change classification with symbolic control migration, and crossfaded patch transitions. MIDI remains Phase 3 work. The `phase1` Git tag identifies the completed Phase 1 baseline.
 
 ## Fedora 44 setup
 
@@ -137,7 +137,7 @@ Declare symbolic parameters in `defsynth`, then update or automate them without 
 (ctl note :velocity 90)
 ```
 
-Controls and automation are applied at exact frames and remain block-size invariant. See [named controls](docs/controls.md) and [smoothing and automation](docs/automation.md).
+Control buses drive parameters of several synths at once: `(defbus bright {:max 1})`, `(map-control! bright :lead :cutoff {:scale 100})`, `(bus-ramp bright 1 {:dur 4})`. Controls and automation are applied at exact frames and remain block-size invariant. See [named controls and buses](docs/controls.md) and [smoothing and automation](docs/automation.md).
 
 ## nREPL and editor access
 
@@ -203,7 +203,7 @@ The operational subcommands accept `--log-level error|warn|info|debug` and `--js
 
 ## Current limitations (Phase 3 in progress)
 
-- A changed aggregate patch conservatively invalidates all active note handles and resets voice allocation. There is no crossfade or general Sointu state migration yet, so live redefinition can produce an audible transition.
+- A redefinition that changes a synth's structure (units, voice count, added or removed synths) releases every sounding note, including notes on unchanged synths, and crossfades their tails out over 20 ms. Only value-only changes keep notes sounding. See [patch lifecycle](docs/patch-lifecycle.md#change-classes-and-strategy).
 - One Sointu VM holds 32 voices, and each instrument at most 63 encoded units. `lgs` splits patches across up to 16 VMs (128 voices per synth, 256 per patch), but synths coupled through `aux`/`in`/cross-synth `send` must fit in one VM. See [the restrictions and workarounds guide](docs/sointu-restrictions.md).
 - Named controls, per-note values, smoothing, and built-in automation curves are supported. Control buses and arbitrary user-defined audio-rate automation functions are not.
 - Only stereo output at 44.1 kHz is supported. There is no sample-library management, disk streaming, microphone input, or multichannel output.
