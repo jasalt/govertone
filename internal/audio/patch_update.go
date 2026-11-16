@@ -29,6 +29,13 @@ type PatchUpdateTrace struct {
 	UpdatedShards []int `json:"updated_shards,omitempty"`
 	AddedShards   []int `json:"added_shards,omitempty"`
 	DroppedShards []int `json:"dropped_shards,omitempty"`
+	// Symbolic control migration (instrument:parameter). Kept values and
+	// automation lane IDs carried into the new generation; reset and
+	// cancelled entries carry a reason and are warnings.
+	MigratedControls    []string `json:"migrated_controls,omitempty"`
+	ResetControls       []string `json:"reset_controls,omitempty"`
+	MigratedAutomation  []uint64 `json:"migrated_automation,omitempty"`
+	CancelledAutomation []string `json:"cancelled_automation,omitempty"`
 }
 type PatchTrace struct {
 	Updates []PatchUpdateTrace `json:"updates"`
@@ -152,9 +159,9 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 		e.owners = make([]uint64, len(compiled.VoiceMap))
 	}
 	e.layout = make(map[patchmodel.InstrumentID]instruments.Definition, len(compiled.Layout.Instruments))
+	oldControls := e.controls
 	e.controls = newControlState(compiled)
 	e.hardReleaseOperands = newHardReleaseOperands(compiled)
-	e.automation = newAutomationState()
 	for id, instrument := range compiled.Layout.Instruments {
 		e.layout[id] = instruments.Definition{ID: id, FirstVoice: instruments.VoiceID(instrument.FirstVoice), Voices: instrument.NumVoices}
 	}
@@ -167,6 +174,7 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 	for voice := range e.owners {
 		e.owners[voice] = 0
 	}
+	e.migrateControls(oldControls, uint64(frame), &entry)
 	entry.InvalidatedHandles = len(owned)
 	e.patchGeneration.Store(uint64(compiled.Generation))
 	e.patchFingerprint.Store(compiled.Fingerprint)
