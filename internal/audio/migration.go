@@ -86,7 +86,7 @@ func (e *Engine) migrateControls(old *controlState, frame uint64, preserve bool,
 			delete(a.lanes, id)
 			delete(a.authoritative, lane.target)
 			a.cancellations++
-			a.record(AutomationTraceEvent{ID: id, Kind: "cancel-patch-update", Instrument: string(lane.target.key.instrument), Parameter: string(lane.target.key.parameter), Voice: lane.target.voice, Frame: frame})
+			a.record(AutomationTraceEvent{ID: id, Kind: "cancel-patch-update", Instrument: string(lane.target.key.instrument), Parameter: string(lane.target.key.parameter), Bus: string(lane.target.bus), Voice: lane.target.voice, Frame: frame})
 			entry.CancelledAutomation = append(entry.CancelledAutomation, fmt.Sprintf("%d %s: %s", id, lane.target.key, reason))
 		}
 	}
@@ -97,6 +97,9 @@ func (e *Engine) migrateControls(old *controlState, frame uint64, preserve bool,
 // laneIncompatible explains why an automation or smoothing lane cannot
 // continue in the new generation, or returns "" when it can.
 func (e *Engine) laneIncompatible(lane *valueLane, preserve bool) string {
+	if lane.target.bus != "" {
+		return "" // buses do not depend on the patch
+	}
 	scope := patchmodel.ScopeInstrument
 	if lane.target.voice >= 0 {
 		if !preserve || e.owners[lane.target.voice] == 0 {

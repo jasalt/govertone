@@ -57,6 +57,10 @@ type Engine struct {
 	controls            *controlState
 	hardReleaseOperands map[shardInstrument][]int
 	automation          *automationState
+	// buses and their mappings are symbolic and survive patch updates;
+	// mappedBy names the bus driving each mapped parameter.
+	buses    map[BusID]*ControlBus
+	mappedBy map[controlKey]BusID
 }
 
 func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm float64) (*Engine, error) {
@@ -73,7 +77,7 @@ func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm f
 	if err != nil {
 		return nil, fmt.Errorf("initialize Sointu: %w", err)
 	}
-	e := &Engine{shards: shards, voiceMap: compiled.VoiceMap, owners: make([]uint64, len(compiled.VoiceMap)), scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}, controls: newControlState(compiled), hardReleaseOperands: newHardReleaseOperands(compiled), automation: newAutomationState()}
+	e := &Engine{shards: shards, voiceMap: compiled.VoiceMap, owners: make([]uint64, len(compiled.VoiceMap)), scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}, controls: newControlState(compiled), hardReleaseOperands: newHardReleaseOperands(compiled), automation: newAutomationState(), buses: map[BusID]*ControlBus{}, mappedBy: map[controlKey]BusID{}}
 	for _, definition := range provider.Instruments() {
 		e.layout[definition.ID] = definition
 	}
@@ -238,6 +242,14 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 			e.recordEvent(ev, at, voice, "cancel-automation-inactive")
 			return
 		}
+	case scheduler.EventSetBus:
+		if err := e.applyBusEvent(ev, at); err != nil {
+			e.dropped.Add(1)
+			e.controlRejected.Add(1)
+			e.recordEvent(ev, at, voice, "set-bus-failed")
+			return
+		}
+		e.controlApplied.Add(1)
 	case scheduler.EventStopAll:
 		for voiceIndex, id := range e.owners {
 			if id != 0 {
@@ -258,7 +270,7 @@ func addressesVoice(ev scheduler.Event) bool {
 func (e *Engine) recordEvent(ev scheduler.Event, at clock.FrameIndex, voice int, kind string) {
 	e.traceMu.Lock()
 	if len(e.trace) < cap(e.trace) {
-		entry := scheduler.TraceEvent{ID: ev.ID, Kind: kind, Instrument: string(ev.Instrument), Voice: voice, Note: ev.Note, Parameter: ev.Parameter, Value: ev.Value, Generation: ev.Generation, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)}
+		entry := scheduler.TraceEvent{ID: ev.ID, Kind: kind, Instrument: string(ev.Instrument), Voice: voice, Note: ev.Note, Parameter: ev.Parameter, Bus: ev.Bus, Value: ev.Value, Generation: ev.Generation, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)}
 		if len(e.shards) > 1 && addressesVoice(ev) && voice >= 0 && voice < len(e.voiceMap) {
 			entry.Shard, entry.LocalVoice = &e.voiceMap[voice].Shard, &e.voiceMap[voice].Local
 		}

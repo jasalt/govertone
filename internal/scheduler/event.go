@@ -15,6 +15,7 @@ const (
 	EventSetControl
 	EventStartAutomation
 	EventCancelAutomation
+	EventSetBus
 )
 
 func (k EventKind) String() string {
@@ -33,6 +34,8 @@ func (k EventKind) String() string {
 		return "start-automation"
 	case EventCancelAutomation:
 		return "cancel-automation"
+	case EventSetBus:
+		return "set-bus"
 	default:
 		return "unknown"
 	}
@@ -58,6 +61,9 @@ type Event struct {
 	StartValue   float64
 	EndValue     float64
 	Curve        string
+	// Bus names the control bus of an EventSetBus, or of an
+	// EventStartAutomation that ramps a bus instead of a synth parameter.
+	Bus string
 }
 
 type TraceEvent struct {
@@ -67,6 +73,7 @@ type TraceEvent struct {
 	Voice          int     `json:"voice"`
 	Note           uint8   `json:"note,omitempty"`
 	Parameter      string  `json:"parameter,omitempty"`
+	Bus            string  `json:"bus,omitempty"`
 	Value          float64 `json:"value,omitempty"`
 	Generation     uint64  `json:"generation,omitempty"`
 	ScheduledFrame uint64  `json:"scheduled_frame"`

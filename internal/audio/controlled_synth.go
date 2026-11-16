@@ -161,6 +161,21 @@ func (e *Engine) SetInstrumentControl(instrument patchmodel.InstrumentID, parame
 
 func (e *Engine) setInstrumentControlLocked(instrument patchmodel.InstrumentID, parameter patchmodel.ParameterID, value float64) error {
 	key := controlKey{instrument, parameter}
+	// A bus mapping takes precedence over explicit values and instrument
+	// automation (phase-3.md §9.4): record the value for when the mapping
+	// is removed, but leave the operands to the bus.
+	_, mapped := e.mappedBy[key]
+	if err := e.writeInstrumentControlLocked(key, value, !mapped); err != nil {
+		return err
+	}
+	e.controls.explicit[key] = value
+	return nil
+}
+
+// writeInstrumentControlLocked validates value for every binding of key and,
+// when write is set, writes the transformed operands.
+func (e *Engine) writeInstrumentControlLocked(key controlKey, value float64, write bool) error {
+	instrument, parameter := key.instrument, key.parameter
 	bindings := e.controls.bindings[key]
 	if len(bindings) == 0 {
 		return fmt.Errorf("unknown-control: synth :%s has no parameter :%s", instrument, parameter)
@@ -176,11 +191,13 @@ func (e *Engine) setInstrumentControlLocked(instrument patchmodel.InstrumentID, 
 		if err != nil {
 			return err
 		}
+		if !write {
+			continue
+		}
 		if err = e.shards[binding.shard].controlled.SetInstrumentControl(binding.Operand, mapped); err != nil {
 			return fmt.Errorf("control-binding-missing: %w", err)
 		}
 	}
-	e.controls.explicit[key] = value
 	return nil
 }
 
@@ -232,6 +249,10 @@ func (e *Engine) resetInstrumentControlLocked(instrument patchmodel.InstrumentID
 	if len(bindings) == 0 {
 		return fmt.Errorf("unknown-control: synth :%s has no parameter :%s", instrument, parameter)
 	}
+	if _, mapped := e.mappedBy[key]; mapped {
+		delete(e.controls.explicit, key)
+		return nil
+	}
 	if !e.supportsControls() {
 		return fmt.Errorf("control-binding-missing: active synth does not support persistent controls")
 	}
@@ -280,10 +301,36 @@ func (e *Engine) ControlValue(instrument patchmodel.InstrumentID, parameter patc
 	if len(bindings) == 0 {
 		return 0, "", fmt.Errorf("unknown-control: synth :%s has no parameter :%s", instrument, parameter)
 	}
+	if value, ok := e.busValueLocked(key); ok {
+		return value, bindings[0].Scope, nil
+	}
 	if value, ok := e.controls.explicit[key]; ok {
 		return value, bindings[0].Scope, nil
 	}
 	return bindings[0].Default, bindings[0].Scope, nil
+}
+
+// MappedBus names the bus driving an instrument parameter, if any.
+func (e *Engine) MappedBus(instrument patchmodel.InstrumentID, parameter patchmodel.ParameterID) (BusID, bool) {
+	e.renderMu.Lock()
+	defer e.renderMu.Unlock()
+	id, ok := e.mappedBy[controlKey{instrument, parameter}]
+	return id, ok
+}
+
+// busValueLocked is the parameter value an active bus mapping produces.
+func (e *Engine) busValueLocked(key controlKey) (float64, bool) {
+	id, ok := e.mappedBy[key]
+	if !ok {
+		return 0, false
+	}
+	bindings := e.controls.bindings[key]
+	for _, m := range e.buses[id].Mappings {
+		if busKey(m) == key && m.Active && len(bindings) > 0 {
+			return min(bindings[0].Maximum, max(bindings[0].Minimum, e.buses[id].Current*m.Scale+m.Offset)), true
+		}
+	}
+	return 0, false
 }
 
 func (e *Engine) VoiceControlValue(voice int, instrument patchmodel.InstrumentID, parameter patchmodel.ParameterID) (float64, bool) {

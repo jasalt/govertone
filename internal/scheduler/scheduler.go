@@ -28,6 +28,8 @@ func eventPriority(event Event) int {
 			return 1
 		}
 		return 3
+	case EventSetBus:
+		return 1
 	case EventTrigger:
 		return 2
 	case EventCancelAutomation:

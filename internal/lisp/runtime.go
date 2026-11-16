@@ -98,6 +98,9 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 	if err := r.installAutomationBindings(); err != nil {
 		return nil, fmt.Errorf("install automation API: %w", err)
 	}
+	if err := r.installBusBindings(); err != nil {
+		return nil, fmt.Errorf("install bus API: %w", err)
+	}
 	return r, nil
 }
 func (r *Runtime) Eval(src string) (vm.Value, error) {

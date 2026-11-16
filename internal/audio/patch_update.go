@@ -207,6 +207,7 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 		result.InvalidatedHandles = len(owned)
 	}
 	e.migrateControls(oldControls, uint64(frame), preserve, &entry)
+	e.refreshBusesLocked()
 	entry.InvalidatedHandles, entry.PreservedHandles = result.InvalidatedHandles, result.PreservedHandles
 	e.patchGeneration.Store(uint64(compiled.Generation))
 	e.patchFingerprint.Store(compiled.Fingerprint)

@@ -37,42 +37,9 @@ func (r *Runtime) rampFn(args []vm.Value) (vm.Value, error) {
 	if err != nil {
 		return vm.NIL, fmt.Errorf("ramp options: %w", err)
 	}
-	startBeat := r.transport.BeatAt(r.engine.Frame())
-	if value := options["at"]; value != nil {
-		startBeat, err = beatValue(value)
-		if err != nil || startBeat.Sign() < 0 {
-			return vm.NIL, fmt.Errorf("ramp :at must be a nonnegative beat")
-		}
-	}
-	durationValue := options["dur"]
-	if durationValue == nil {
-		return vm.NIL, fmt.Errorf("invalid-automation-duration: ramp requires :dur")
-	}
-	duration, err := beatValue(durationValue)
-	if err != nil || duration.Sign() <= 0 {
-		return vm.NIL, fmt.Errorf("invalid-automation-duration: ramp :dur must be positive")
-	}
-	endBeat, err := startBeat.Add(duration)
+	startFrame, endFrame, curve, err := r.rampWindow(options)
 	if err != nil {
 		return vm.NIL, err
-	}
-	startFrame, err := r.transport.FrameAt(startBeat)
-	if err != nil {
-		return vm.NIL, err
-	}
-	endFrame, err := r.transport.FrameAt(endBeat)
-	if err != nil || endFrame <= startFrame {
-		return vm.NIL, fmt.Errorf("invalid-automation-duration: duration resolves to no frames")
-	}
-	curve := "linear"
-	if value := options["curve"]; value != nil {
-		curve, err = keywordName(value, "automation curve")
-		if err != nil {
-			return vm.NIL, err
-		}
-	}
-	if curve != "linear" && curve != "exponential" && curve != "smoothstep" && curve != "hold" {
-		return vm.NIL, fmt.Errorf("invalid-automation-curve: :%s", curve)
 	}
 	target, err := r.parseControlTarget(args[0], uint64(r.engine.Frame()))
 	if err != nil {
@@ -122,6 +89,50 @@ func (r *Runtime) rampFn(args []vm.Value) (vm.Value, error) {
 		return vm.NIL, fmt.Errorf("automation-limit-exceeded: %w", err)
 	}
 	return mapOf(vm.Keyword("automation"), vm.Int(added.ID), vm.Keyword("target"), vm.Keyword(target.instrument), vm.Keyword("parameter"), vm.Keyword(parameterName), vm.Keyword("start-frame"), vm.Int(startFrame), vm.Keyword("end-frame"), vm.Int(endFrame), vm.Keyword("curve"), vm.Keyword(curve)), nil
+}
+
+// rampWindow resolves ramp options :at (default now), :dur (required) and
+// :curve (default :linear) to frames.
+func (r *Runtime) rampWindow(options map[string]vm.Value) (clock.FrameIndex, clock.FrameIndex, string, error) {
+	var err error
+	startBeat := r.transport.BeatAt(r.engine.Frame())
+	if value := options["at"]; value != nil {
+		startBeat, err = beatValue(value)
+		if err != nil || startBeat.Sign() < 0 {
+			return 0, 0, "", fmt.Errorf("ramp :at must be a nonnegative beat")
+		}
+	}
+	durationValue := options["dur"]
+	if durationValue == nil {
+		return 0, 0, "", fmt.Errorf("invalid-automation-duration: ramp requires :dur")
+	}
+	duration, err := beatValue(durationValue)
+	if err != nil || duration.Sign() <= 0 {
+		return 0, 0, "", fmt.Errorf("invalid-automation-duration: ramp :dur must be positive")
+	}
+	endBeat, err := startBeat.Add(duration)
+	if err != nil {
+		return 0, 0, "", err
+	}
+	startFrame, err := r.transport.FrameAt(startBeat)
+	if err != nil {
+		return 0, 0, "", err
+	}
+	endFrame, err := r.transport.FrameAt(endBeat)
+	if err != nil || endFrame <= startFrame {
+		return 0, 0, "", fmt.Errorf("invalid-automation-duration: duration resolves to no frames")
+	}
+	curve := "linear"
+	if value := options["curve"]; value != nil {
+		curve, err = keywordName(value, "automation curve")
+		if err != nil {
+			return 0, 0, "", err
+		}
+	}
+	if curve != "linear" && curve != "exponential" && curve != "smoothstep" && curve != "hold" {
+		return 0, 0, "", fmt.Errorf("invalid-automation-curve: :%s", curve)
+	}
+	return startFrame, endFrame, curve, nil
 }
 
 func (r *Runtime) cancelAutomationFn(args []vm.Value) (vm.Value, error) {

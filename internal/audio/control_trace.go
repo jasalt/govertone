@@ -17,7 +17,7 @@ func (e *Engine) ControlTrace() ControlTrace {
 	defer e.traceMu.Unlock()
 	result := ControlTrace{SampleRate: clock.SampleRate, Events: make([]scheduler.TraceEvent, 0)}
 	for _, event := range e.trace {
-		if strings.HasPrefix(event.Kind, "set-control") {
+		if strings.HasPrefix(event.Kind, "set-control") || strings.HasPrefix(event.Kind, "set-bus") {
 			result.Events = append(result.Events, event)
 		}
 	}

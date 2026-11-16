@@ -15,7 +15,8 @@ const maxActiveAutomation = 4096
 
 type automationTarget struct {
 	key   controlKey
-	voice int // -1 means instrument scope
+	voice int   // -1 means instrument scope
+	bus   BusID // set for a bus lane; key is then empty
 }
 
 type valueLane struct {
@@ -35,6 +36,7 @@ type AutomationTraceEvent struct {
 	Kind       string `json:"kind"`
 	Instrument string `json:"instrument"`
 	Parameter  string `json:"parameter"`
+	Bus        string `json:"bus,omitempty"`
 	Voice      int    `json:"voice,omitempty"`
 	StartFrame uint64 `json:"start_frame"`
 	EndFrame   uint64 `json:"end_frame"`
@@ -86,6 +88,9 @@ func EvaluateAutomationCurve(curve string, start, end, position float64) (float6
 }
 
 func (e *Engine) automationTargetFor(event scheduler.Event) automationTarget {
+	if event.Bus != "" {
+		return automationTarget{voice: -1, bus: BusID(event.Bus)}
+	}
 	voice := -1
 	if event.HandleID != 0 {
 		voice = int(event.Voice)
@@ -133,7 +138,11 @@ func (e *Engine) startAutomation(event scheduler.Event, at clock.FrameIndex) err
 		return fmt.Errorf("automation-limit-exceeded")
 	}
 	target := e.automationTargetFor(event)
-	if len(e.controls.bindings[target.key]) == 0 {
+	if target.bus != "" {
+		if e.buses[target.bus] == nil {
+			return fmt.Errorf("unknown-bus")
+		}
+	} else if len(e.controls.bindings[target.key]) == 0 {
 		return fmt.Errorf("stale-automation-target")
 	}
 	id := event.AutomationID
@@ -142,12 +151,12 @@ func (e *Engine) startAutomation(event scheduler.Event, at clock.FrameIndex) err
 	}
 	if e.automation.cancelled[id] {
 		delete(e.automation.cancelled, id)
-		e.automation.record(AutomationTraceEvent{ID: id, Kind: "cancelled-before-start", Instrument: string(target.key.instrument), Parameter: string(target.key.parameter), Voice: target.voice, Frame: uint64(at)})
+		e.automation.record(AutomationTraceEvent{ID: id, Kind: "cancelled-before-start", Instrument: string(target.key.instrument), Parameter: string(target.key.parameter), Bus: string(target.bus), Voice: target.voice, Frame: uint64(at)})
 		return nil
 	}
 	if oldID, ok := e.automation.authoritative[target]; ok {
 		delete(e.automation.lanes, oldID)
-		e.automation.record(AutomationTraceEvent{ID: oldID, Kind: "replaced", Instrument: string(target.key.instrument), Parameter: string(target.key.parameter), Voice: target.voice, Frame: uint64(at)})
+		e.automation.record(AutomationTraceEvent{ID: oldID, Kind: "replaced", Instrument: string(target.key.instrument), Parameter: string(target.key.parameter), Bus: string(target.bus), Voice: target.voice, Frame: uint64(at)})
 	}
 	lane := &valueLane{id: id, target: target, startFrame: uint64(at), endFrame: uint64(event.EndFrame), startValue: event.StartValue, endValue: event.EndValue, curve: event.Curve, kind: "automation"}
 	e.automation.lanes[id] = lane
@@ -155,7 +164,7 @@ func (e *Engine) startAutomation(event scheduler.Event, at clock.FrameIndex) err
 	if len(e.automation.lanes) > e.automation.highWater {
 		e.automation.highWater = len(e.automation.lanes)
 	}
-	e.automation.record(AutomationTraceEvent{ID: id, Kind: "start", Instrument: string(target.key.instrument), Parameter: string(target.key.parameter), Voice: target.voice, StartFrame: lane.startFrame, EndFrame: lane.endFrame, Curve: lane.curve})
+	e.automation.record(AutomationTraceEvent{ID: id, Kind: "start", Instrument: string(target.key.instrument), Parameter: string(target.key.parameter), Bus: string(target.bus), Voice: target.voice, StartFrame: lane.startFrame, EndFrame: lane.endFrame, Curve: lane.curve})
 	return nil
 }
 
@@ -176,7 +185,7 @@ func (e *Engine) cancelAutomation(id uint64, at clock.FrameIndex) bool {
 	delete(e.automation.lanes, id)
 	delete(e.automation.authoritative, lane.target)
 	e.automation.cancellations++
-	e.automation.record(AutomationTraceEvent{ID: id, Kind: "cancel", Instrument: string(lane.target.key.instrument), Parameter: string(lane.target.key.parameter), Voice: lane.target.voice, Frame: uint64(at)})
+	e.automation.record(AutomationTraceEvent{ID: id, Kind: "cancel", Instrument: string(lane.target.key.instrument), Parameter: string(lane.target.key.parameter), Bus: string(lane.target.bus), Voice: lane.target.voice, Frame: uint64(at)})
 	return true
 }
 
@@ -193,6 +202,9 @@ func laneValue(lane *valueLane, frame uint64) (float64, bool) {
 }
 
 func (e *Engine) setTargetValue(target automationTarget, value float64) error {
+	if target.bus != "" {
+		return e.setBusLocked(target.bus, value)
+	}
 	if target.voice >= 0 {
 		return e.setVoiceControlLocked(target.voice, target.key.instrument, target.key.parameter, value)
 	}
@@ -222,7 +234,7 @@ func (e *Engine) advanceControls(frame uint64) {
 		if done {
 			delete(e.automation.lanes, id)
 			delete(e.automation.authoritative, lane.target)
-			e.automation.record(AutomationTraceEvent{ID: id, Kind: "complete", Instrument: string(lane.target.key.instrument), Parameter: string(lane.target.key.parameter), Voice: lane.target.voice, Frame: frame})
+			e.automation.record(AutomationTraceEvent{ID: id, Kind: "complete", Instrument: string(lane.target.key.instrument), Parameter: string(lane.target.key.parameter), Bus: string(lane.target.bus), Voice: lane.target.voice, Frame: frame})
 		}
 	}
 }
