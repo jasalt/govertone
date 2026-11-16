@@ -4,6 +4,8 @@
 
 `internal/lisp.Runtime` owns the embedded let-go control environment and validates all user values. It materializes immutable frame-stamped events; it never renders. `patch.Compiler` owns typed schemas, normalization, routing and stack analysis; `patch.Registry` owns transactional definitions and generations. `scheduler.Scheduler` owns a bounded, sequence-ordered heap. `audio.Engine` exclusively owns the Sointu synth, applies events and prepared patch updates, and renders. In real-time mode Oto calls the engine from its reader goroutine; offline mode calls the identical method synchronously. No let-go closure is retained for future execution: `at` invokes its thunk immediately under a temporary scheduling context.
 
+Every evaluation, whether from the terminal REPL, nREPL, MIDI dispatch or a script, goes through `Runtime.Eval`, which serializes it under one mutex. let-go keeps compiler state process-wide (its constant pool and current namespace), so a process has **one** `Runtime`. Two runtimes evaluating concurrently would race inside let-go. Tests that need a second app evaluate on it before starting concurrent work. `TestConcurrentActivityIsRaceFree` runs every concurrent activity at once under `-race`.
+
 The audio path does not evaluate Lisp, parse forms, access files, log blocks, run commands, or construct patches. It takes only a short scheduler lock to transfer bounded commands. Buffers are supplied by the offline renderer or Oto. A future lock-free command ring can replace this transfer without changing domain APIs.
 
 ## Scheduling and transport
