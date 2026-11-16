@@ -10,14 +10,19 @@ Please enable the audio on the video viewer for full enjoyment.
 
 Sequencing and other features are in progress so composition source code is not most REPL friendly but works for now for audio demo purposes.
 
-**Game of Thrones theme** ([source](examples/game-of-thrones-theme.lg))
-
-[game-of-thrones-theme.mp3](https://github.com/user-attachments/files/30309929/game-of-thrones-theme.mp3)
-
+#### Single Sointu instance from initial version
 
 **Hectic electronic beat** ([source](examples/hectic-electronic-beat.lg))
 
 [hectic-electronic-beat.mp3](https://github.com/user-attachments/files/30309935/hectic-electronic-beat.mp3)
+
+**Game of Thrones theme** ([source](examples/game-of-thrones-theme.lg))
+
+[game-of-thrones-theme.mp3](https://github.com/user-attachments/files/30309929/game-of-thrones-theme.mp3)
+
+#### NEW: Multi Sointu instance
+
+<TODO ADD LINKS HERE>
 
 ## Background
 
