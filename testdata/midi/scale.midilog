@@ -1,0 +1,12 @@
+# Notes C4 D4 E4 F4 at 0.25 s intervals (frames at 44100 Hz). D4 ends with a
+# note-on of velocity 0, which is a note-off. CC 7 raises the level at 0.75 s.
+{"frame":0,"type":"cc","channel":1,"control":7,"value":64}
+{"frame":0,"type":"note-on","channel":1,"note":60,"velocity":127}
+{"frame":11025,"type":"note-off","channel":1,"note":60,"velocity":0}
+{"frame":11025,"type":"note-on","channel":1,"note":62,"velocity":100}
+{"frame":22050,"type":"note-on","channel":1,"note":62,"velocity":0}
+{"frame":22050,"type":"note-on","channel":1,"note":64,"velocity":60}
+{"frame":33075,"type":"cc","channel":1,"control":7,"value":127}
+{"frame":33075,"type":"note-off","channel":1,"note":64,"velocity":0}
+{"frame":33075,"type":"note-on","channel":1,"note":65,"velocity":127}
+{"frame":44100,"type":"note-off","channel":1,"note":65,"velocity":0}

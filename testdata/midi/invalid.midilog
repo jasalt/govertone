@@ -1,0 +1,2 @@
+{"frame":0,"type":"note-on","channel":1,"note":60,"velocity":100}
+{"frame":10,"type":"note-on","channel":1,"note":200,"velocity":100}

@@ -34,12 +34,16 @@ render-fixtures: build
 	$(LGS) render --input testdata/buses/two-synths.lg --output out/fixtures/bus-two-synths.wav --duration 2s --tail 0s --control-trace out/fixtures/bus-two-synths-controls.json --automation-trace out/fixtures/bus-two-synths-automation.json
 	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/crossfade-edit.lg --then-at 500ms --output out/fixtures/crossfade.wav --duration 1s --tail 0s --patch-trace out/fixtures/crossfade-patches.json
 	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/hard-edit.lg --then-at 500ms --output out/fixtures/hard-swap.wav --duration 1s --tail 0s --patch-trace out/fixtures/hard-swap-patches.json
+	$(LGS) midi replay --input testdata/midi/scale.midilog --program testdata/midi/synth.lg --output out/fixtures/midi-scale.wav --duration 1s --tail 250ms --midi-trace out/fixtures/midi-scale-trace.json --control-trace out/fixtures/midi-scale-controls.json
+	$(LGS) midi replay --input testdata/midi/scale.midilog --program testdata/midi/synth.lg --output out/fixtures/midi-scale-b333.wav --duration 1s --tail 250ms --block-size 333
+	! $(LGS) midi replay --input testdata/midi/invalid.midilog --program testdata/midi/synth.lg --output out/fixtures/midi-invalid.wav --duration 1s
 
 analyze-fixtures: render-fixtures
 	python3 scripts/validate-audio.py --input out/fixtures/single-note.wav --report out/fixtures/single-note-python.json
 	python3 scripts/validate-audio.py --input out/fixtures/scale.wav --report out/fixtures/scale-python.json
 	python3 scripts/validate-bus-fixture.py out/fixtures/bus-two-synths.wav
 	python3 scripts/validate-transition-fixture.py out/fixtures/crossfade.wav out/fixtures/hard-swap.wav
+	python3 scripts/validate-midi-fixture.py out/fixtures/midi-scale.wav out/fixtures/midi-scale-b333.wav
 
 test-audio: render-fixtures analyze-fixtures
 

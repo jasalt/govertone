@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/audio"
 	"github.com/example/letgo-sointu/internal/clock"
+	"github.com/example/letgo-sointu/internal/midi"
 	musicnrepl "github.com/example/letgo-sointu/internal/nrepl"
 )
 
@@ -31,7 +33,7 @@ func versionText() string {
 	return fmt.Sprintf("music-runtime %s\ngo: %s\nlet-go: %s\nsointu: %s", version, runtime.Version(), letGoCommit, sointuCommit)
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: lgs <repl|render|analyze|patch|doctor|version> [options]")
+	fmt.Fprintln(os.Stderr, "usage: lgs <repl|render|analyze|patch|midi|doctor|version> [options]")
 }
 func main() { code := run(os.Args[1:]); os.Exit(code) }
 func run(args []string) int {
@@ -51,6 +53,8 @@ func run(args []string) int {
 		return doctorCommand(args[1:])
 	case "patch":
 		return patchCommand(args[1:])
+	case "midi":
+		return midiCommand(args[1:])
 	case "repl":
 		return replCommand(args[1:])
 	default:
@@ -424,6 +428,7 @@ func doctorCommand(args []string) int {
 		return 1
 	}
 	fmt.Printf("offline: ok (peak %.4f, pitch %.2f Hz)\n", r.Left.Peak, r.DominantFrequencyHz)
+	doctorMIDI()
 	if *noAudio {
 		fmt.Println("real-time audio: skipped (--no-audio)")
 	} else if realtime, e := audio.StartRealtime(a.Engine); e != nil {
@@ -448,4 +453,49 @@ func writeJSON(path string, v any) error {
 		}
 	}
 	return os.WriteFile(path, append(b, '\n'), 0644)
+}
+
+// doctorMIDI reports MIDI support. Missing hardware or a missing backend is
+// informational and never fails the doctor.
+func doctorMIDI() {
+	if err := checkMIDIReplay(); err != nil {
+		fmt.Println("midi replay: FAIL:", err)
+	} else {
+		fmt.Println("midi replay: ok")
+	}
+	backend, err := midiBackend()
+	if err != nil {
+		fmt.Println("midi backend: unavailable (optional):", err)
+		return
+	}
+	devices, err := backend.Devices(context.Background())
+	if err != nil {
+		fmt.Printf("midi backend: %s, device enumeration failed (optional): %v\n", backend.Name(), err)
+		return
+	}
+	fmt.Printf("midi backend: %s, %d inputs\n", backend.Name(), len(devices))
+}
+
+// checkMIDIReplay drives a note through a binding using a replay event and
+// checks the scheduler frame, so doctor proves the replay path without
+// hardware.
+func checkMIDIReplay() error {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	if _, err = a.Lisp.Eval(`(midi-bind! {} :sine)`); err != nil {
+		return err
+	}
+	a.Lisp.ReplayMIDI([]midi.Event{{Device: "doctor", Frame: 1000, HasFrame: true, Message: midi.Message{Kind: midi.NoteOn, Channel: 1, Data1: 69, Data2: 100}}})
+	if _, err = audio.RenderOffline(a.Engine, 2048, 256); err != nil {
+		return err
+	}
+	for _, e := range a.Engine.Trace(256).Events {
+		if e.Kind == "trigger" && e.AppliedFrame == 1000 && e.Note == 69 {
+			return nil
+		}
+	}
+	return fmt.Errorf("replayed note-on did not trigger at frame 1000")
 }

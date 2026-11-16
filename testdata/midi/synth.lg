@@ -1,0 +1,10 @@
+;; Program for the MIDI replay fixtures: a four-voice sine with a declared
+;; velocity, an instrument-level cutoff-style gain and a pitch-bend parameter.
+(defsynth lead {:voices 4
+                :params {:velocity {:default 1 :min 0 :max 1 :scope :voice}
+                         :level {:default 64 :min 0 :max 128}}}
+  (oscillator {:type :sine :gain (param :velocity)})
+  (out {:gain (param :level)}))
+
+(midi-bind! {:channel 1} :lead)
+(midi-cc-bind! {:channel 1 :cc 7} :lead :level {:min 0 :max 128})
