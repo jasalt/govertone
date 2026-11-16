@@ -1,16 +1,22 @@
 # let-go Sointu music runtime (`lgs`)
 
-`lgs` is an interactive music environment embedding the [let-go](https://github.com/nooga/let-go) Lisp runtime and the pure-Go [Sointu](https://github.com/vsariola/sointu) VM. It provides exact beat scheduling, deterministic offline float WAV rendering, real-time stereo output through Oto/ALSA/PipeWire, automatic audio analysis, a transactional `defsynth` patch DSL, persistent live controls, sample-accurate automation, and editor access through nREPL.
+An experimental music environment combining [let-go](https://github.com/nooga/let-go) Lisp with the pure-Go [Sointu](https://github.com/vsariola/sointu) synth engine. Define sounds, schedule notes, automate parameters and redefine patches live—from a terminal or an editor via nREPL.
 
-[Demo-2026-07-14-23-28-37.webm](https://github.com/user-attachments/assets/c0084d98-901b-41b5-b279-9e42dfad1e3b)
+- Exact beat scheduling and deterministic offline stereo float WAV rendering.
+- Multi-VM synthesis: up to **64 sounds and 256 reserved voices** by default.
+- Named controls, per-note parameters, smoothing, automation and shared control buses.
+- Transactional patch updates, state migration and configurable crossfades.
+- MIDI notes, CC and pitch bend; structured logs, statistics and correlated traces.
 
-Please enable the audio on the video viewer for full enjoyment.
+[Video demo](https://github.com/user-attachments/assets/c0084d98-901b-41b5-b279-9e42dfad1e3b) — enable audio in the viewer.
 
-### Audio examples rendered by lgs
+## Demo songs
 
-Sequencing and other features are in progress so composition source code is not most REPL friendly but works for now for audio demo purposes.
+Run song scripts from the repository root. They schedule absolute beats from frame zero and are intended for offline rendering, not loading into an already-running REPL timeline.
 
-#### Single Sointu instance from initial version
+### Original single-VM demos
+
+One Sointu VM supports **32 voices total across the patch**, not 32 different sounds. A voice is one note slot: a six-note chord uses six voices. Each instrument reserves slots even when silent. The original electronic beat reserved **31 voices across six sounds** (kick 3, hat 4, snare 4, bass 6, stabs 8, effects 6). The original theme used three built-in sounds: lead, bass and sine.
 
 **Hectic electronic beat** ([source](examples/hectic-electronic-beat.lg))
 
@@ -20,21 +26,23 @@ Sequencing and other features are in progress so composition source code is not 
 
 [game-of-thrones-theme.mp3](https://github.com/user-attachments/files/30309929/game-of-thrones-theme.mp3)
 
-#### NEW: Multi Sointu instance
+### Multi-VM demos
 
-**Hectic electronic beat v2** ([source](examples/hectic-electronic-beat-v2.lg)) — 16 sounds, 39 simultaneous notes.
+Each VM still has 32 slots, but `lgs` now splits one logical patch across multiple VMs. These arrangements exceed the old limit in **actual simultaneous notes**, not just reservations.
+
+**Hectic electronic beat v2** ([source](examples/hectic-electronic-beat-v2.lg)) — 16 sounds, 111 reserved voices, **39 simultaneous notes** across four VMs.
 
 [hectic-electronic-beat-v2.mp3](examples/audio/hectic-electronic-beat-v2.mp3)
 
-**Game of Thrones theme v2** ([source](examples/game-of-thrones-theme-v2.lg)) — 12 sounds, 39 simultaneous notes.
+**Game of Thrones theme v2** ([source](examples/game-of-thrones-theme-v2.lg)) — 12 sounds, 96 reserved voices, **39 simultaneous notes** across three VMs.
 
 [game-of-thrones-theme-v2.mp3](examples/audio/game-of-thrones-theme-v2.mp3)
 
-**Ode to Joy orchestra** ([source](examples/ode-to-joy-orchestra.lg)) — 64 sounds across 16 orchestral sections, 256 simultaneous notes.
+**Ode to Joy orchestra** ([source](examples/ode-to-joy-orchestra.lg)) — **64 sounds and 256 simultaneous notes** across eight VMs. Sixteen synthetic orchestral sections each have four panned/detuned desks; these are not 64 distinct instrument families or sampled instruments.
 
 [ode-to-joy-orchestra.mp3](examples/audio/ode-to-joy-orchestra.mp3)
 
-[Arrangement details, measurements and render commands](examples/multisound-songs.md).
+All three passed offline checks for headroom, finite samples, exact timing and no voice stealing or late/dropped events. Real-time hardware performance is not established by these renders. See [arrangements, measurements and reproduction commands](examples/multisound-songs.md).
 
 ## Background
 
@@ -47,194 +55,122 @@ Initial research on the topic and the specification documents (`phaseX.md`) were
 
 Content within this heading is (probably) the only human written text in the project currently and rest is LLM generated. LLM please keep hands off from this section.
 
-## Progress (Phase 3 in progress)
+## Status
 
-Phase 1 established the deterministic runtime, scheduler, fixed instruments, and audio validation. Phase 2 added typed patch construction, transactional live redefinition, symbolic routing, and `defsynth`. Phase 3 currently adds named instrument/voice parameters, persistent non-recompiling controls, exact-frame smoothing and automation, and bounded loopback-safe nREPL access, control buses, change classification with symbolic control migration, crossfaded patch transitions, and MIDI note, CC and pitch-bend bindings with deterministic replay. The ALSA sequencer backend is untested on real hardware. The `phase1` Git tag identifies the completed Phase 1 baseline.
+The core Phase 3 features are implemented and the full offline acceptance suite passes, including race tests, audio validation and the scripted demonstration. Final acceptance review and Fedora 44 real-audio/MIDI smoke testing remain open; the ALSA MIDI backend has not been verified on real hardware.
 
-## Fedora 44 setup
-
-```sh
-./scripts/bootstrap-fedora.sh
-```
-
-The script verifies every package with `dnf info` before installing it. The implementation was developed with `go version go1.26.5 linux/amd64`.
-
-## Nix dev shell
-
-On any Linux or macOS machine with Nix (flakes enabled), `flake.nix` provides the same toolchain without installing system packages: Go 1.26, gcc, pkg-config, ALSA, GNU make, and Python with numpy and scipy.
-
-```sh
-nix develop                     # enter the shell
-nix develop -c make acceptance  # or run one command
-```
-
-The shell sets `GOTOOLCHAIN=local` and `CGO_ENABLED=1`, so it builds the real-time output and runs `make test-race` and the Python audio analysis. Hearing audio still needs a running PipeWire/ALSA sink on the host. Go is pinned to 1.26 until the let-go upgrade in #27; see [dependency pins](docs/dependencies.md#upstream-let-go-upgrade).
+The project uses Go 1.26 and pinned dependencies. The next let-go upgrade is tracked in #27; see [dependency notes](docs/dependencies.md). Earlier phase baselines are documented in [the Phase 3 baseline](docs/phase3-baseline.md).
 
 ## Build and test
 
+With Nix and flakes enabled:
+
 ```sh
+nix develop
 make build
-make test
-make doctor
 make acceptance
 ```
 
-`make acceptance` also runs race, patch, audio-fixture, and independent Python validation. It requires the Fedora packages installed by `scripts/bootstrap-fedora.sh`; ordinary offline builds and `go test ./...` do not require an audio device.
+The shell supplies Go, build tools and Python with numpy/scipy, plus GCC and ALSA on Linux. Alternatively, on Fedora 44:
 
-## REPL and first note
+```sh
+./scripts/bootstrap-fedora.sh
+make build
+make acceptance
+```
+
+For a headless build without a C compiler or audio hardware:
+
+```sh
+CGO_ENABLED=0 go build -o out/lgs ./cmd/lgs
+CGO_ENABLED=0 go test ./...
+```
+
+Full acceptance needs cgo for race tests and Python for independent audio checks. Real-time Linux playback additionally needs an available PipeWire/ALSA sink.
+
+Useful checks: `make doctor`, `make demo`, `make acceptance-phase3`, `make benchmark`. The expanded songs have their own validator:
+
+```sh
+nix develop -c python3 scripts/validate-multisound-songs.py
+```
+
+## Play and define sounds
 
 ```sh
 ./out/lgs repl
-music.core=> (play :sine :a4 {:dur 1})
+# Optional: rlwrap ./out/lgs repl
 ```
 
-*PRO TIP: append `rlwrap` in front of the lgs repl startup command for better typing ergonomics.*
-
-Durations and `:at` positions are measured in beats and can be integers, ratios (`1/3`), or floats (`0.25`). Beats are stored as exact ratios, and a float becomes the nearest ratio with a denominator of at most 1,000,000, so `0.1` is `1/10`. Use `./out/lgs repl --no-audio` in a headless environment. Lisp evaluation and patch compilation never occur on the audio callback.
-
-Define and play a synth interactively:
-
 ```clojure
-(defsynth bell {:voices 4}
-  ;; A struck fundamental plus two shorter-lived metallic partials.
-  (envelope {:attack 4 :decay 82 :sustain 0 :release 70})
-  (oscillator {:type :sine})
-  (mulp)
-  (envelope {:attack 4 :decay 74 :sustain 0 :release 68 :gain 104})
-  (oscillator {:type :sine :transpose 79 :detune 74 :gain 104})
-  (mulp)
-  (addp)
-  (envelope {:attack 4 :decay 78 :sustain 0 :release 68 :gain 90})
-  (oscillator {:type :sine :transpose 83 :gain 90})
-  (mulp)
-  (addp)
-  (out {:gain 64}))
+(play :sine :a4 {:dur 1})
 
-(play bell :c5 {:dur 2})
-(synth-info :bell)
-(patch-generation)
-```
-
-The zero-sustain envelopes make this a struck, decaying sound even while the note is held; the transposed oscillators supply metallic partials rather than a plain sine. The same renderable example is in `testdata/programs/bell.lg`.
-
-Reevaluating the same `defsynth` with changed units transactionally updates Sointu while preserving `:bell`. An invalid redefinition leaves the previous synth and generation active. See [the patch DSL guide](docs/patch-dsl.md).
-
-## Sointu limits and voice budgeting
-
-One Sointu VM holds at most 32 voices. `lgs` splits a patch across several VMs, renders them in lockstep, and mixes them sample-accurately. A synth can therefore have up to 128 voices, and a patch up to 256, with no change to the API:
-
-```clojure
-(defsynth pad {:voices 64}
-  (envelope {:attack 32 :release 64})
+(defsynth tone {:voices 4
+               :params {:level {:default 32 :min 0 :max 128}}}
+  (envelope {:attack 8 :decay 64 :sustain 80 :release 48})
   (oscillator {:type :saw})
   (mulp)
-  (out {:gain 8}))
-(patch-info) ; => {... :voice-budget {:used 88 :limit 256 :per-vm 32 :max-vms 16} :shards [...]}
-```
-
-Synths connected through `aux`/`in` channels or a cross-synth `send` must share one VM, so such a group is still limited to 32 voices. An `in` on channel 0/1 reads the main output and therefore couples with every synth using `out`. Voice stealing, realistic per-instrument allocations, and multiple/unison oscillators per voice reduce demand, and every configured voice costs CPU even when silent. Sointu also imposes unit, stack, routing, delay, sample-table, and output constraints. See [Sointu restrictions and workarounds](docs/sointu-restrictions.md) and the [multi-instance engine](docs/multi-instance-engine.md) design.
-
-## Live controls and automation
-
-Declare symbolic parameters in `defsynth`, then update or automate them without recompiling the patch:
-
-```clojure
-(defsynth controlled-tone
-  {:voices 4
-   :params {:level {:default 32 :min 0 :max 128 :scope :instrument}
-            :velocity {:default 100 :min 0 :max 127 :scope :voice}}}
-  (oscillator {:type :sine :gain (param :velocity)})
   (out {:gain (param :level)}))
 
-(def note (play :controlled-tone :a4
-                {:dur 4 :params {:velocity 110}}))
-(ctl :controlled-tone :level 80)
-(ramp :controlled-tone :level 80 112
-      {:at 1 :dur 2 :curve :smoothstep})
-(ctl note :velocity 90)
+(play :tone :c4 {:dur 4})
+(ctl :tone :level 48)
+(ramp :tone :level 48 8 {:dur 2 :curve :smoothstep})
 ```
 
-Control buses drive parameters of several synths at once: `(defbus bright {:max 1})`, `(map-control! bright :lead :cutoff {:scale 100})`, `(bus-ramp bright 1 {:dur 4})`. Controls and automation are applied at exact frames and remain block-size invariant. See [named controls and buses](docs/controls.md) and [smoothing and automation](docs/automation.md).
+Durations and `:at` positions are in beats; ratios such as `1/3` are supported. `:at` is an **absolute beat**, not a delay from now. Omit it to play immediately. Tempo changes do not retime already-scheduled events.
 
-## nREPL and editor access
+Redefining a synth is transactional: invalid definitions leave the previous patch active. Compatible value changes preserve sounding notes; structural changes release notes and crossfade their tails (20 ms by default). `repl --crossfade 50ms` changes that default; a definition's explicit `:crossfade` overrides it.
 
-Start an nREPL listener on an OS-selected local port:
+Use `repl --no-audio` for headless evaluation; it does not advance the audio timeline. Use `render` for headless playback and timing tests. See [the REPL API](docs/repl-api.md), [patch DSL](docs/patch-dsl.md), [controls](docs/controls.md), [automation](docs/automation.md) and [buses](docs/control-buses.md).
+
+## Editor and MIDI access
 
 ```sh
-./out/lgs repl --nrepl 0
-# nREPL listening on 127.0.0.1:43817
+./out/lgs repl --nrepl 0 --midi auto --crossfade 20ms
 ```
 
-The resolved port is written to `.nrepl-port` by default for CIDER, Calva, Conjure, and CLI clients such as [brepl](https://github.com/licht1stein/brepl). nREPL binds only to loopback unless `--nrepl-bind` explicitly requests another address. Remote evaluation uses the same serialized let-go boundary and normal music APIs as the terminal REPL; it never evaluates Lisp on the audio callback. See [the nREPL guide](docs/nrepl.md) for operations, editor setup, security, and interrupt limitations.
+nREPL selects a local port and writes `.nrepl-port` for editor clients. It binds to loopback by default; there is no authentication or TLS. Evaluations share the terminal REPL's serialized control-side runtime, never the audio callback.
 
-## Deterministic rendering and validation
+`--midi auto` connects available inputs; use `--midi "DEVICE"` for one device and `--midi-latency 5ms` for latency compensation. Connecting alone does not create note/CC bindings; see [MIDI setup and mappings](docs/midi.md). With no backend/device the REPL reports it and continues.
 
-A render script may define synths before scheduling notes:
+Hardware MIDI currently requires a Linux cgo build. gomidi and cgo-free alternatives are evaluated in [MIDI backend options](docs/midi-backends.md); they are not implemented. See [nREPL setup](docs/nrepl.md) for editors and interrupt limitations.
+
+## Render and inspect
 
 ```sh
 ./out/lgs render \
-  --input testdata/programs/dynamic-synth.lg \
-  --output out/dynamic-synth.wav --duration 2s --tail 1s \
-  --event-trace out/dynamic-synth-events.json \
-  --patch-trace out/dynamic-synth-patches.json \
-  --control-trace out/dynamic-synth-controls.json \
-  --automation-trace out/dynamic-synth-automation.json \
-  --report out/dynamic-synth-analysis.json
-./out/lgs analyze \
-  --input out/dynamic-synth.wav \
-  --report out/dynamic-synth-analysis.json
-python3 scripts/validate-audio.py --input out/dynamic-synth.wav
+  --input examples/hectic-electronic-beat-v2.lg \
+  --output out/hectic-electronic-beat-v2.wav --duration 28s --tail 2s \
+  --event-trace out/events.json --report out/analysis.json
 ```
 
-`--duration` is timeline duration; `--tail` (default 2 seconds) is added to it. Offline rendering uses the same scheduler, voice allocator, patch-update path, and Sointu VM as real-time mode. Output is always stereo, 44.1 kHz, 32-bit IEEE float WAV.
+Output is stereo, 44.1 kHz, 32-bit float WAV. `--tail` is added to the timeline duration. The initial script is evaluated before rendering; use repeatable `--then FILE --then-at 2s` pairs, in ascending time order, for mid-render edits.
 
-## Commands
+| Command | Purpose |
+|---|---|
+| `lgs repl` | Terminal REPL, optional nREPL and MIDI input |
+| `lgs render` / `lgs analyze` | Offline rendering / WAV analysis |
+| `lgs patch compile\|validate\|inspect --input FILE` | Patch diagnostics and layout |
+| `lgs controls inspect --input FILE [--synth ID]` | Parameters and compiled bindings |
+| `lgs automation validate --input FILE` | Offline validation; exit 7 for rejected, stale, late or dropped controls/automation |
+| `lgs midi list\|monitor\|replay` | Device discovery, monitoring and deterministic log replay |
+| `lgs doctor` / `lgs version` | Environment checks / version |
 
-* `lgs repl [--no-audio] [--tail 2s] [--midi none|auto|DEVICE] [--midi-latency 0s] [--crossfade 20ms] [--nrepl PORT] [--nrepl-bind ADDRESS] [--nrepl-port-file=true|false]`
-* `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE] [--patch-trace FILE] [--control-trace FILE] [--automation-trace FILE] [--midi-trace FILE] [--transition-trace FILE] [--then FILE --then-at DURATION]...`; `--then`/`--then-at` pairs repeat, in ascending order
-* `lgs analyze --input FILE [--report FILE]`
-* `lgs patch <compile|validate|inspect> --input FILE [--report FILE] [--format json]`
-* `lgs controls inspect --input FILE [--synth ID]` prints named parameters and their Sointu operand bindings as JSON
-* `lgs automation validate --input FILE [--duration 10s]` renders offline and exits 7 if any control or automation was rejected, stale, late or dropped
-* `lgs midi list [--json]`, `lgs midi monitor --device NAME`, `lgs midi replay --input FILE --program FILE --output FILE --duration DURATION`
-* `lgs doctor [--no-audio]`
-* `lgs version`
+Render traces cover events, patches, controls, automation, MIDI and transitions. `render`, `repl`, `patch` and `doctor` accept `--log-level error|warn|info|debug` and `--json-logs`; logs go to stderr, never from the audio thread. REPL exit statistics include scheduling, controls, transitions, MIDI and nREPL counters. See [logging and statistics](docs/architecture.md#logging) and [audio validation](docs/audio-validation.md).
 
-The operational subcommands (`render`, `repl`, `patch`, `doctor`) accept `--log-level error|warn|info|debug` and `--json-logs`. Logs go to stderr in key=value form, or as JSON with `--json-logs` (see [architecture](docs/architecture.md#logging)). See:
+## Limits
 
-### User guides
+- **64 instrument definitions, 256 total reserved voices, 128 voices per synth**, packed into at most 16 VMs. These are configuration limits, not a real-time CPU guarantee. Every reserved voice costs CPU, even when silent.
+- Synths linked by `aux`/`in` or cross-synth `send` must share a VM and fit within 32 voices. Shard outputs sum at unity gain: leave mix headroom. See [multi-instance synthesis](docs/multi-instance-engine.md) and [Sointu restrictions](docs/sointu-restrictions.md).
+- Structural redefinitions release sounding notes across the patch, including unchanged synths; crossfades soften the transition but do not preserve those notes. See [patch lifecycle](docs/patch-lifecycle.md) and [transition costs](docs/patch-transitions.md).
+- Only stereo 44.1 kHz output; no microphone input, sample-library management, disk streaming, multichannel output or arbitrary user-defined DSP opcodes.
+- Buses target instrument-scoped controls. Automation uses built-in curves, not user-supplied audio-rate functions.
+- MIDI supports notes, CC and pitch bend—not aftertouch, program changes, sysex, clock or Standard MIDI Files. No OSC, pattern language, swing engine or tempo ramps.
+- nREPL cannot preempt a running evaluator or supply stdin to runtime forms. Keep it on loopback or use a secure tunnel.
+- Save synth definitions in source files; there is no persistent REPL history or patch database.
 
-- [REPL API](docs/repl-api.md)
-- [named controls and per-note parameters](docs/controls.md)
-- [smoothing and automation](docs/automation.md)
-- [control buses](docs/control-buses.md)
-- [MIDI input, bindings and replay](docs/midi.md)
-- [MIDI backend options (gomidi, cgo-free)](docs/midi-backends.md)
-- [nREPL and editor integration](docs/nrepl.md)
-- [patch DSL](docs/patch-dsl.md)
-- [unit reference](docs/unit-reference.md)
-- [patch lifecycle](docs/patch-lifecycle.md)
-- [patch transitions and their CPU cost](docs/patch-transitions.md)
-- [Phase 3 baseline and controlled-Sointu feasibility](docs/phase3-baseline.md)
-- [Phase 3 demonstration and its proof](docs/demo.md) (`make demo`)
-- [patch errors](docs/patch-errors.md)
-- [Sointu restrictions and workarounds](docs/sointu-restrictions.md)
-- [audio validation](docs/audio-validation.md)
+## More documentation
+
+- [Unit reference](docs/unit-reference.md) and [patch errors](docs/patch-errors.md)
+- [Architecture](docs/architecture.md) and [dependency pins / Sointu changes](docs/dependencies.md)
+- [Phase 3 demonstration and proof](docs/demo.md)
 - [Fedora troubleshooting](docs/troubleshooting-fedora.md)
-
-### Architecture and dependencies
-
-- [runtime architecture](docs/architecture.md)
-- [dependency pins and controlled Sointu VM patch](docs/dependencies.md)
-
-## Current limitations (Phase 3 in progress)
-
-- A redefinition that changes a synth's structure (units, voice count, added or removed synths) releases every sounding note, including notes on unchanged synths, and crossfades their tails out over 20 ms. Only value-only changes keep notes sounding. See [patch lifecycle](docs/patch-lifecycle.md#change-classes-and-strategy).
-- One Sointu VM holds 32 voices, and each instrument at most 63 encoded units. `lgs` splits patches across up to 16 VMs (128 voices per synth, 256 per patch), but synths coupled through `aux`/`in`/cross-synth `send` must fit in one VM. See [the restrictions and workarounds guide](docs/sointu-restrictions.md).
-- Named controls, per-note values, smoothing, and built-in automation curves are supported. Control buses map to instrument-scoped parameters only. Arbitrary user-defined audio-rate automation functions are not supported.
-- Only stereo output at 44.1 kHz is supported. There is no sample-library management, disk streaming, microphone input, or multichannel output.
-- MIDI covers notes, CC and pitch bend only: no program change, aftertouch, sysex, MIDI clock or Standard MIDI Files, and the ALSA backend has not yet been tried on real hardware. There is no OSC, pattern language, swing/groove engine, tempo ramp, plugin system, native controlled export, WebAssembly controlled export, or arbitrary user-defined DSP opcode support.
-- nREPL has no authentication or TLS and therefore binds to loopback by default. The pinned let-go evaluator does not expose preemptive cancellation or nREPL stdin consumption; these limitations are documented in [docs/nrepl.md](docs/nrepl.md).
-- A tempo change affects subsequently converted beat positions but does not retimestamp events already materialized as frames.
-- Real-time Linux output requires a CGO-enabled build, ALSA development files, and an available PipeWire/ALSA sink. Offline rendering, patch compilation, and analysis remain fully headless.
-- Synth definitions persist only in source files supplied by the user; the REPL does not maintain a persistent history or patch database.
