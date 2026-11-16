@@ -79,3 +79,7 @@ Offline mode follows the same method synchronously, so scripts can define a synt
 ## Compilation performance
 
 On the Fedora 44 development VM (AMD EPYC-Genoa, Go 1.26.5), `BenchmarkCompileAggregate` compiled eight instruments / 32 units including temporary Sointu bytecode validation in approximately 2.6 ms per aggregate (20-iteration sample). This is well below the 100 ms interactive target; results vary by host.
+
+## Transition fixtures
+
+An offline script is evaluated entirely before rendering starts, so it cannot redefine a synth while a note sounds. `lgs render --then FILE --then-at 500ms` renders up to the given time, evaluates a second program, and renders the rest. `make test-audio` uses it for `testdata/transitions`: a sustained sine is redefined structurally at 0.5 s, once with the default crossfade and once with `:transition :hard`. `scripts/validate-transition-fixture.py` checks that both renders match before the update, are finite and unclipped, and are silent after the fade. It also checks that the crossfade's largest sample step stays at the level of the sustained tone, while the hard swap's step is at least 5 times larger, which calibrates the metric.

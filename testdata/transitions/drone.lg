@@ -1,0 +1,6 @@
+; A sustained envelope-less sine. The *-edit.lg files redefine it
+; structurally (voices 1 -> 2) at 0.5 s via `lgs render --then`.
+; C4 is used because the update lands mid-cycle: A3 or A4 would cross
+; zero at 0.5 s, and a hard swap would not click.
+(defsynth drone {:voices 1} (oscillator {:type :sine}) (out {:gain 64}))
+(play :drone :c4 {:at 0 :dur 8})

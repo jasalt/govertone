@@ -31,10 +31,15 @@ render-fixtures: build
 	$(LGS) render --input testdata/programs/timing.lg --output out/fixtures/timing.wav --duration 4s --report out/fixtures/timing.json --event-trace out/fixtures/timing-events.json
 	$(LGS) render --input testdata/programs/wide-pad.lg --output out/fixtures/wide-pad.wav --duration 6s --report out/fixtures/wide-pad.json --event-trace out/fixtures/wide-pad-events.json
 	$(LGS) render --input testdata/programs/dynamic-synth.lg --output out/fixtures/dynamic-synth.wav --duration 2s --tail 1s --report out/fixtures/dynamic-synth.json --event-trace out/fixtures/dynamic-synth-events.json --patch-trace out/fixtures/dynamic-synth-patches.json
+	$(LGS) render --input testdata/buses/two-synths.lg --output out/fixtures/bus-two-synths.wav --duration 2s --tail 0s --control-trace out/fixtures/bus-two-synths-controls.json --automation-trace out/fixtures/bus-two-synths-automation.json
+	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/crossfade-edit.lg --then-at 500ms --output out/fixtures/crossfade.wav --duration 1s --tail 0s --patch-trace out/fixtures/crossfade-patches.json
+	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/hard-edit.lg --then-at 500ms --output out/fixtures/hard-swap.wav --duration 1s --tail 0s --patch-trace out/fixtures/hard-swap-patches.json
 
 analyze-fixtures: render-fixtures
 	python3 scripts/validate-audio.py --input out/fixtures/single-note.wav --report out/fixtures/single-note-python.json
 	python3 scripts/validate-audio.py --input out/fixtures/scale.wav --report out/fixtures/scale-python.json
+	python3 scripts/validate-bus-fixture.py out/fixtures/bus-two-synths.wav
+	python3 scripts/validate-transition-fixture.py out/fixtures/crossfade.wav out/fixtures/hard-swap.wav
 
 test-audio: render-fixtures analyze-fixtures
 

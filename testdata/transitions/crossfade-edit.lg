@@ -1,0 +1,2 @@
+; Default transition: 20 ms equal-power crossfade.
+(defsynth drone {:voices 2} (oscillator {:type :sine}) (out {:gain 64}))

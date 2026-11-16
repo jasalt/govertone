@@ -34,8 +34,8 @@ type valueLane struct {
 type AutomationTraceEvent struct {
 	ID         uint64 `json:"id"`
 	Kind       string `json:"kind"`
-	Instrument string `json:"instrument"`
-	Parameter  string `json:"parameter"`
+	Instrument string `json:"instrument,omitempty"`
+	Parameter  string `json:"parameter,omitempty"`
 	Bus        string `json:"bus,omitempty"`
 	Voice      int    `json:"voice,omitempty"`
 	StartFrame uint64 `json:"start_frame"`

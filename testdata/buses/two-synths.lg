@@ -1,0 +1,20 @@
+; One control bus drives the output level of two synths with different
+; transforms: a step at beat 1, then a ramp over beats 2-3.
+(defsynth bus-low
+  {:voices 1 :params {:level {:default 0 :min 0 :max 128}}}
+  (oscillator {:type :sine})
+  (out {:gain (param :level)}))
+
+(defsynth bus-high
+  {:voices 1 :params {:level {:default 0 :min 0 :max 128}}}
+  (oscillator {:type :sine})
+  (out {:gain (param :level)}))
+
+(defbus mix {:default 0 :min 0 :max 1})
+(map-control! mix :bus-low :level {:scale 64})
+(map-control! mix :bus-high :level {:scale -48 :offset 48})
+
+(play :bus-low :a3 {:at 0 :dur 4})
+(play :bus-high :e5 {:at 0 :dur 4})
+(bus-set! mix 0.5 {:at 1})
+(bus-ramp mix 0.5 1 {:at 2 :dur 1})

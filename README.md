@@ -174,7 +174,7 @@ python3 scripts/validate-audio.py --input out/dynamic-synth.wav
 ## Commands
 
 * `lgs repl [--no-audio] [--tail 2s] [--nrepl PORT] [--nrepl-bind ADDRESS] [--nrepl-port-file=true|false]`
-* `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE] [--patch-trace FILE] [--control-trace FILE] [--automation-trace FILE]`
+* `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE] [--patch-trace FILE] [--control-trace FILE] [--automation-trace FILE] [--then FILE --then-at DURATION]`
 * `lgs analyze --input FILE [--report FILE]`
 * `lgs patch <compile|validate|inspect> --input FILE [--report FILE] [--format json]`
 * `lgs doctor [--no-audio]`

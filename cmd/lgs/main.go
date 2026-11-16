@@ -85,6 +85,8 @@ func renderCommand(args []string) int {
 	patchTrace := fs.String("patch-trace", "", "patch update trace JSON output")
 	controlTrace := fs.String("control-trace", "", "control event trace JSON output")
 	automationTrace := fs.String("automation-trace", "", "automation lane trace JSON output")
+	then := fs.String("then", "", "second let-go program, evaluated when rendering reaches --then-at (live edits such as synth redefinition)")
+	thenAt := fs.Duration("then-at", 0, "timeline position of --then")
 	_, level, _ := common(fs)
 	if fs.Parse(args) != nil {
 		return 2
@@ -121,11 +123,36 @@ func renderCommand(args []string) int {
 		return 3
 	}
 	frames := int(((*duration) + (*tail)) * clock.SampleRate / time.Second)
-	buf, err := audio.RenderOffline(a.Engine, frames, *block)
+	split := 0
+	var thenSrc []byte
+	if *then != "" {
+		split = int(*thenAt * clock.SampleRate / time.Second)
+		if split < 0 || split > frames {
+			fmt.Fprintln(os.Stderr, "--then-at must lie within the rendered duration")
+			return 2
+		}
+		if thenSrc, err = os.ReadFile(*then); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 3
+		}
+	}
+	buf, err := audio.RenderOffline(a.Engine, split, *block)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 5
 	}
+	if thenSrc != nil {
+		if _, err = a.Lisp.EvalScript(string(thenSrc)); err != nil {
+			fmt.Fprintf(os.Stderr, "--then evaluation: %v\n", err)
+			return 3
+		}
+	}
+	rest, err := audio.RenderOffline(a.Engine, frames-split, *block)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 5
+	}
+	buf = append(buf, rest...)
 	if err = audio.WriteWAV(*output, buf); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 5

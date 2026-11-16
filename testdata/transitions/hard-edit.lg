@@ -1,0 +1,2 @@
+; Baseline: hard swap, the old note stops at once.
+(defsynth drone {:voices 2 :transition :hard} (oscillator {:type :sine}) (out {:gain 64}))
