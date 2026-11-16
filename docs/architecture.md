@@ -18,6 +18,10 @@ For `[F,F+N)`, the engine renders to the next event, applies every event at that
 
 Allocation chooses the lowest voice whose reservation ended before the new start. If none is free it steals the oldest start, ties resolving to the lowest voice. Handles carry generation, ID and voice epoch. Engine release events only act when that ID still owns the voice, so a stale release cannot stop its replacement. Future events resolve symbolic instrument plus voice offset through the currently installed layout.
 
+## Planned: multiple Sointu instances
+
+The engine currently owns one Sointu VM, so the aggregate patch is limited to 32 voices. The accepted direction is to keep logical instruments and voices everywhere above the engine and to compile the logical patch into ≤ 32-voice shards. Each shard runs in its own VM; all shards render in lockstep at the same event-split frames and are summed in a fixed order. A patch that fits in one VM stays on one shard and renders identically. See [multi-instance engine](multi-instance-engine.md).
+
 ## Shutdown
 
 Shutdown is idempotent at component level: stop scheduling, enqueue releases with `stop-all`, close Oto, stop the transport, then close Sointu. Offline rendering always stops at timeline plus tail even if a voice sustains.

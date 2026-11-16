@@ -106,7 +106,7 @@ Sointu v0.6.0 permits at most **32 voices across the entire patch**, not 32 per 
       (out {:gain 70}))))
 ```
 
-More than 32 independently gated notes requires multiple Sointu instances and external mixing; current `lgs` uses one instance. Voice stealing, realistic per-instrument allocations, and multiple/unison oscillators per voice can reduce demand, but layered oscillators are not independent voices. Sointu also imposes unit, stack, routing, delay, sample-table, and output constraints. See [Sointu restrictions and workarounds](docs/sointu-restrictions.md).
+More than 32 independently gated notes requires multiple Sointu instances and external mixing; current `lgs` uses one instance. The accepted architecture for lifting this is to shard one logical patch transparently across several Sointu VMs with the same API (planned; see [multi-instance engine](docs/multi-instance-engine.md)). Voice stealing, realistic per-instrument allocations, and multiple/unison oscillators per voice can reduce demand, but layered oscillators are not independent voices. Sointu also imposes unit, stack, routing, delay, sample-table, and output constraints. See [Sointu restrictions and workarounds](docs/sointu-restrictions.md).
 
 ## Live controls and automation
 
