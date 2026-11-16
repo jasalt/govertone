@@ -167,6 +167,17 @@ func (s *GoSynth) ParameterOperand(address ParameterAddress) (int, bool) {
 	return offset, ok
 }
 
+// SetRandomSeed sets the noise generator state. A new VM starts at seed 1, so
+// a host that runs several VMs side by side gives each a distinct seed to
+// keep their noise decorrelated. Zero would make the generator constant, so it
+// is mapped to the default seed.
+func (s *GoSynth) SetRandomSeed(seed uint32) {
+	if seed == 0 {
+		seed = 1
+	}
+	s.state.randSeed = seed
+}
+
 func (s *GoSynth) Close() {}
 
 func (s *GoSynth) CPULoad(loads []sointu.CPULoad) int {

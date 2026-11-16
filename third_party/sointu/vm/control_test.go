@@ -52,3 +52,41 @@ func bufferRMS(buffer sointu.AudioBuffer) float64 {
 	}
 	return math.Sqrt(sum / float64(len(buffer)))
 }
+
+func TestSetRandomSeedDecorrelatesNoise(t *testing.T) {
+	patch := sointu.Patch{{Name: "noise", NumVoices: 1, Units: []sointu.Unit{
+		{Type: "noise", Parameters: sointu.ParamMap{"shape": 64, "gain": 128, "stereo": 0}},
+		{Type: "out", Parameters: sointu.ParamMap{"gain": 128, "stereo": 0}},
+	}}}
+	render := func(seed uint32, set bool) sointu.AudioBuffer {
+		value, err := (GoSynther{}).Synth(patch, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		synth := value.(*GoSynth)
+		if set {
+			synth.SetRandomSeed(seed)
+		}
+		synth.Trigger(0, 64)
+		out := make(sointu.AudioBuffer, 256)
+		if n, _, err := synth.Render(out, len(out)); err != nil || n != len(out) {
+			t.Fatalf("render: n=%d err=%v", n, err)
+		}
+		return out
+	}
+	base, one, zero, other := render(0, false), render(1, true), render(0, true), render(0x9E3779B2, true)
+	for i := range base {
+		if base[i] != one[i] || base[i] != zero[i] {
+			t.Fatalf("seed 1 (and 0) must match the default at frame %d", i)
+		}
+	}
+	same := 0
+	for i := range base {
+		if base[i] == other[i] {
+			same++
+		}
+	}
+	if same > len(base)/8 {
+		t.Fatalf("different seed produced %d identical frames of %d", same, len(base))
+	}
+}

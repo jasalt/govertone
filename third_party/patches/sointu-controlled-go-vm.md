@@ -15,6 +15,7 @@ Only the pure Go VM is extended:
 - render-time parameter loading applies voice override, then instrument override, then the original bytecode value, before ordinary transient Sointu port modulation.
 - finite-value, voice, and operand bounds are checked outside the sample loop.
 - patch `Update` clears generation-specific operand overrides; the host is responsible for symbolic migration.
+- `GoSynth.SetRandomSeed(uint32)` sets the noise generator state (default 1; 0 maps to 1). The multi-VM engine gives each shard a distinct seed so noise in different VMs is decorrelated. Shard 0 keeps seed 1, so single-VM output is unchanged.
 
 No-control rendering follows the original branch and arithmetic. Native, WebAssembly, and 4klang export are unchanged and do not expose host controls.
 
