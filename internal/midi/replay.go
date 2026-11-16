@@ -17,13 +17,15 @@ const DefaultReplayDevice = "replay"
 //	{"frame":0,"type":"note-on","channel":1,"note":60,"velocity":100}
 //	{"frame":22050,"type":"cc","channel":1,"control":74,"value":64}
 //	{"frame":22050,"type":"pitch-bend","channel":1,"bend":-2048}
+//	{"frame":44100,"device":"Pad","type":"disconnect"}
 //
-// "device" is optional. Frames must not decrease.
+// "device" is optional except for disconnect and connect, which report the
+// device being lost or returning. Frames must not decrease.
 type logLine struct {
 	Frame    uint64 `json:"frame"`
 	Device   string `json:"device,omitempty"`
 	Type     string `json:"type"`
-	Channel  int    `json:"channel"`
+	Channel  int    `json:"channel,omitempty"`
 	Note     *int   `json:"note,omitempty"`
 	Velocity *int   `json:"velocity,omitempty"`
 	Control  *int   `json:"control,omitempty"`
@@ -81,6 +83,12 @@ func parseLogLine(text string) (Event, error) {
 	if err := decoder.Decode(&line); err != nil {
 		return Event{}, err
 	}
+	if line.Type == "disconnect" || line.Type == "connect" {
+		if line.Device == "" {
+			return Event{}, fmt.Errorf("%s needs a \"device\"", line.Type)
+		}
+		return Event{Device: line.Device, Frame: line.Frame, HasFrame: true, Lifecycle: line.Type}, nil
+	}
 	if line.Channel < 1 || line.Channel > 16 {
 		return Event{}, fmt.Errorf("channel %d is outside 1..16", line.Channel)
 	}
@@ -119,7 +127,7 @@ func parseLogLine(text string) (Event, error) {
 		}
 		message.Bend = int16(*line.Bend)
 	default:
-		return Event{}, fmt.Errorf("unknown type %q; expected note-on, note-off, cc or pitch-bend", line.Type)
+		return Event{}, fmt.Errorf("unknown type %q; expected note-on, note-off, cc, pitch-bend, disconnect or connect", line.Type)
 	}
 	device := line.Device
 	if device == "" {
@@ -135,6 +143,16 @@ func WriteLog(w io.Writer, events []Event) error {
 	for _, event := range events {
 		if !event.HasFrame {
 			return fmt.Errorf("midi event has no frame; place it before logging")
+		}
+		if event.Lifecycle != "" {
+			data, err := json.Marshal(logLine{Frame: event.Frame, Device: event.Device, Type: event.Lifecycle})
+			if err != nil {
+				return err
+			}
+			if _, err = fmt.Fprintf(w, "%s\n", data); err != nil {
+				return err
+			}
+			continue
 		}
 		line := logLine{Frame: event.Frame, Channel: int(event.Message.Channel)}
 		if event.Device != DefaultReplayDevice {

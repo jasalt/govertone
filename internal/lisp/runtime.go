@@ -32,6 +32,7 @@ type Runtime struct {
 	stdout        *routingWriter
 	stderr        *routingWriter
 	atBeat        *clock.Beat
+	midi          *midiState
 }
 
 type routingWriter struct {
@@ -100,6 +101,9 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 	}
 	if err := r.installBusBindings(); err != nil {
 		return nil, fmt.Errorf("install bus API: %w", err)
+	}
+	if err := r.installMIDIBindings(); err != nil {
+		return nil, fmt.Errorf("install MIDI API: %w", err)
 	}
 	return r, nil
 }

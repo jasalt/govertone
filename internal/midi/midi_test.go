@@ -153,6 +153,8 @@ const sampleLog = `# C major triad
 {"frame":22050,"type":"pitch-bend","channel":1,"bend":-2048}
 {"frame":44100,"type":"note-on","channel":1,"note":60,"velocity":0}
 {"frame":44100,"type":"note-off","channel":1,"note":60,"velocity":64}
+{"frame":50000,"device":"Pad","type":"disconnect"}
+{"frame":60000,"device":"Pad","type":"connect"}
 `
 
 func TestReplayLogRoundTrips(t *testing.T) {
@@ -160,7 +162,7 @@ func TestReplayLogRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 5 || events[1].Device != "Pad" || events[0].Device != DefaultReplayDevice {
+	if len(events) != 7 || events[1].Device != "Pad" || events[0].Device != DefaultReplayDevice {
 		t.Fatalf("events %+v", events)
 	}
 	if events[3].Message.Kind != NoteOff || events[2].Message.Bend != -2048 {
@@ -192,6 +194,9 @@ func TestReplayLogRejectsMalformedLines(t *testing.T) {
 			t.Errorf("%s: error %v, want line 2 mentioning %q", line, err, want)
 		}
 	}
+	if _, err := ReadLog(strings.NewReader(`{"frame":1,"type":"disconnect"}`)); err == nil || !strings.Contains(err.Error(), "device") {
+		t.Fatalf("disconnect without device: %v", err)
+	}
 	_, err := ReadLog(strings.NewReader(`{"frame":10,"type":"cc","channel":1,"control":1,"value":1}` + "\n" + `{"frame":9,"type":"cc","channel":1,"control":1,"value":1}`))
 	if err == nil || !strings.Contains(err.Error(), "before the previous frame") {
 		t.Fatalf("decreasing frames: %v", err)
@@ -210,7 +215,7 @@ func FuzzReadLog(f *testing.F) {
 			return
 		}
 		for _, e := range events {
-			if !e.Message.Valid() {
+			if e.Lifecycle == "" && !e.Message.Valid() {
 				t.Fatalf("invalid message %+v from %q", e.Message, text)
 			}
 		}

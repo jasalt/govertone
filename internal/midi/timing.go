@@ -17,6 +17,9 @@ type Event struct {
 	Timestamp time.Time
 	Frame     uint64
 	HasFrame  bool
+	// Lifecycle is "" for a message, or "disconnect" / "connect" when the
+	// device itself was lost or came back. Message is unused then.
+	Lifecycle string
 	Message   Message
 }
 
