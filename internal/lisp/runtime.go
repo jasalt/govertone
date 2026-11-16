@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"os"
 	"sort"
 	"strings"
@@ -273,13 +272,10 @@ func incomplete(err error) bool {
 }
 
 func beatValue(v vm.Value) (clock.Beat, error) {
-	rat, ok := vm.ToRat(v)
-	if !ok {
-		if f, yes := v.(vm.Float); yes {
-			rat = new(big.Rat).SetFloat64(float64(f))
-			ok = rat != nil
-		}
+	if f, yes := v.(vm.Float); yes {
+		return clock.BeatFromFloat(float64(f))
 	}
+	rat, ok := vm.ToRat(v)
 	if !ok {
 		return clock.Beat{}, fmt.Errorf("beat must be an integer, ratio, or float, got %s", v.Type().Name())
 	}

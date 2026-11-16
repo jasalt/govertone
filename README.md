@@ -62,7 +62,7 @@ music.core=> (play :sine :a4 {:dur 1})
 
 *PRO TIP: append `rlwrap` in front of the lgs repl startup command for better typing ergonomics.*
 
-Durations and `:at` positions are measured in beats. Use `./out/lgs repl --no-audio` in a headless environment. Lisp evaluation and patch compilation never occur on the audio callback.
+Durations and `:at` positions are measured in beats and can be integers, ratios (`1/3`), or floats (`0.25`). Beats are stored as exact ratios, and a float becomes the nearest ratio with a denominator of at most 1,000,000, so `0.1` is `1/10`. Use `./out/lgs repl --no-audio` in a headless environment. Lisp evaluation and patch compilation never occur on the audio callback.
 
 Define and play a synth interactively:
 

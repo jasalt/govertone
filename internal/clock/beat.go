@@ -29,6 +29,59 @@ func NewBeat(n, d int64) (Beat, error) {
 	return Beat{n / g, d / g}, nil
 }
 
+// MaxFloatBeatDenominator bounds the denominator chosen for a float beat.
+// It keeps sums with other beats (transport positions use 1/1_000_000)
+// inside int64, and its resolution (1e-6 beat) is far finer than one frame.
+const MaxFloatBeatDenominator = 1_000_000
+
+// BeatFromFloat returns the beat closest to f with a denominator of at most
+// MaxFloatBeatDenominator. Decimal and simple fractional values convert to
+// the intended ratio: 0.1 becomes 1/10 and 0.3333333333333333 becomes 1/3.
+// Converting the float exactly would give a denominator up to 2^1074 (0.1 is
+// 3602879701896397/36028797018963968), which overflows any later sum.
+func BeatFromFloat(f float64) (Beat, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return Beat{}, fmt.Errorf("beat must be finite, got %v", f)
+	}
+	if math.Abs(f) >= 1<<53 {
+		return Beat{}, errors.New("beat overflow")
+	}
+	exact := new(big.Rat).SetFloat64(f)
+	r := limitDenominator(exact, MaxFloatBeatDenominator)
+	return NewBeat(r.Num().Int64(), r.Denom().Int64())
+}
+
+// limitDenominator is the closest rational to x with denominator <= max,
+// found from the continued-fraction convergents and semiconvergents.
+func limitDenominator(x *big.Rat, max int64) *big.Rat {
+	if x.Denom().Cmp(big.NewInt(max)) <= 0 {
+		return new(big.Rat).Set(x)
+	}
+	limit := big.NewInt(max)
+	p0, q0, p1, q1 := big.NewInt(0), big.NewInt(1), big.NewInt(1), big.NewInt(0)
+	n, d := new(big.Int).Set(x.Num()), new(big.Int).Set(x.Denom())
+	for d.Sign() != 0 {
+		a, rem := new(big.Int).DivMod(n, d, new(big.Int))
+		q2 := new(big.Int).Add(q0, new(big.Int).Mul(a, q1))
+		if q2.Cmp(limit) > 0 {
+			break
+		}
+		p2 := new(big.Int).Add(p0, new(big.Int).Mul(a, p1))
+		p0, q0, p1, q1 = p1, q1, p2, q2
+		n, d = d, rem
+	}
+	if d.Sign() == 0 {
+		return new(big.Rat).SetFrac(p1, q1)
+	}
+	k := new(big.Int).Div(new(big.Int).Sub(limit, q0), q1)
+	semi := new(big.Rat).SetFrac(new(big.Int).Add(p0, new(big.Int).Mul(k, p1)), new(big.Int).Add(q0, new(big.Int).Mul(k, q1)))
+	conv := new(big.Rat).SetFrac(p1, q1)
+	if new(big.Rat).Abs(new(big.Rat).Sub(conv, x)).Cmp(new(big.Rat).Abs(new(big.Rat).Sub(semi, x))) <= 0 {
+		return conv
+	}
+	return semi
+}
+
 func MustBeat(n, d int64) Beat {
 	b, err := NewBeat(n, d)
 	if err != nil {

@@ -130,3 +130,43 @@ func TestBindingErrorsDoNotPoisonRuntime(t *testing.T) {
 		t.Fatalf("runtime poisoned: %v %v", v, err)
 	}
 }
+
+// Issue #26: float beats such as {:dur 0.1} must schedule like the
+// equivalent ratio, including after the transport has advanced, which
+// makes the start beat an awkward microbeat fraction.
+func TestFloatBeatsScheduleLikeRatios(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err = audio.RenderOffline(a.Engine, 12345, 512); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Lisp.Eval(`(play :sine :a5 {:dur 0.1})`); err != nil {
+		t.Fatalf("float :dur: %v", err)
+	}
+	for _, form := range []string{`(play :sine :a4 {:at 2.5 :dur 0.25})`, `(at 3.75 #(play :bass :c2 {:dur 1.5}))`} {
+		if _, err = a.Lisp.Eval(form); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = audio.RenderOffline(a.Engine, 200000, 512); err != nil {
+		t.Fatal(err)
+	}
+	want := map[uint64]bool{12345 + 2205: true, 55125: true, 60638: true, 82688: true, 115763: true}
+	for _, e := range a.Engine.Trace(512).Events {
+		if !want[uint64(e.ScheduledFrame)] && uint64(e.ScheduledFrame) != 12345 {
+			t.Fatalf("unexpected frame %d (%s)", e.ScheduledFrame, e.Kind)
+		}
+		delete(want, uint64(e.ScheduledFrame))
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing frames %v", want)
+	}
+	for _, bad := range []string{`(play :sine :a5 {:dur ##NaN})`, `(play :sine :a5 {:dur ##Inf})`} {
+		if _, err = a.Lisp.Eval(bad); err == nil {
+			t.Fatalf("%s accepted", bad)
+		}
+	}
+}
