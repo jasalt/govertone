@@ -1,0 +1,69 @@
+;; V2 orchestration of the existing short Game of Thrones theme sketch.
+;; Melody: Ramin Djawadi; this is a synthetic fan arrangement, not a recording
+;; or a claim to the composition. The original melody/timing is reused below.
+;; 12 sounds / 96 reserved voices, with 39 simultaneous notes at the full-ensemble climax.
+;; Run from the repository root:
+;; ./out/lgs render --input examples/game-of-thrones-theme-v2.lg \
+;;   --output out/game-of-thrones-theme-v2.wav --duration 38s --tail 2s
+(tempo 90)
+
+;; id, waveform, cutoff, gain, attack, release, pan.
+(def court-sections
+  [[:lead :saw 90 14 24 30 44]
+   [:bass :saw 62 16 28 36 84]
+   [:sine :sine 110 8 42 44 64]
+   [:violin-left :saw 82 6 34 38 16]
+   [:violin-right :saw 92 6 38 40 112]
+   [:viola :trisaw 74 7 30 36 40]
+   [:cello :saw 66 8 30 34 90]
+   [:horn :saw 70 8 26 30 32]
+   [:flute :sine 112 8 18 26 76]
+   [:reed :pulse 74 5 22 28 56]
+   [:harp :trisaw 100 8 0 24 104]
+   [:timpani :sine 64 20 0 16 64]])
+
+(defn court-sound [section]
+  (instrument (nth section 0) {:voices 8}
+    (oscillator {:type (nth section 1) :color 72 :gain 96})
+    (filter {:type :lowpass :frequency (nth section 2) :resonance 40})
+    (envelope {:attack (nth section 4) :decay 42
+               :sustain (if (= (nth section 4) 0) 0 88)
+               :release (nth section 5)})
+    (mulp)
+    (pan {:panning (nth section 6)})
+    (out {:gain (nth section 3)})))
+(install-patch! (apply patch (map court-sound court-sections)))
+(load-file "examples/game-of-thrones-theme.lg")
+
+;; Harmony follows the original sketch, including its major-third turn.
+(def court-chords [[48 51 55 60] [48 51 55 60]
+                   [48 52 55 60] [48 52 55 60]
+                   [44 48 51 56] [44 48 51 56]
+                   [49 53 56 61] [51 55 58 63] [48 51 55 60]])
+(def court-motifs [[67 60 63 65 67] [67 60 63 65 67]
+                   [67 60 64 65 67] [67 60 64 65 67]
+                   [72 67 68 70 72] [72 67 68 70 72]
+                   [68 61 65 67 68] [70 63 67 68 70] [67 60 63 65 72]])
+(def court-times [0 3/2 3 7/2 4])
+(def court-durations [3/2 3/2 1/2 1/2 2])
+
+(doseq [phrase (range 9)]
+  (let [start (* phrase 6) chord (nth court-chords phrase)]
+    ;; Quiet divided strings first; horns and reed join halfway through.
+    (doseq [part (range (if (< phrase 4) 4 7)) pitch chord]
+      (play (nth [:violin-left :violin-right :viola :cello :horn :flute :reed] part)
+            (+ pitch (nth [12 12 0 -12 0 12 0] part))
+            {:at start :dur (if (= phrase 8) 8 23/4)}))
+    (doseq [step (range 12)]
+      (play :harp (+ 12 (nth chord (mod step 4)))
+            {:at (+ start (* step 1/2)) :dur 3/4}))
+    (doseq [offset [0 3]]
+      (play :timpani (- (nth chord 0) 12) {:at (+ start offset) :dur 1/4}))
+    ;; Octave melody doubles sit above the sustained divisi in the same parts.
+    (if (>= phrase 4)
+      (doseq [part [:violin-left :violin-right :horn] step (range 5)]
+        (play part (+ (nth (nth court-motifs phrase) step)
+                      (if (= part :horn) -12 0))
+              {:at (+ start (nth court-times step))
+               :dur (if (and (= phrase 8) (= step 4)) 4
+                      (nth court-durations step))})))))

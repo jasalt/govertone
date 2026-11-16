@@ -1,0 +1,55 @@
+;; V2 keeps the original 18-bar drum/bass arrangement and adds ten sounds
+;; of orchestration: four stereo pads, four arps, a sub and metallic toms.
+;; 16 instruments, 111 reserved voices. Run from the repository root:
+;; ./out/lgs render --input examples/hectic-electronic-beat-v2.lg \
+;;   --output out/hectic-electronic-beat-v2.wav --duration 28s --tail 2s
+(load-file "examples/hectic-electronic-beat.lg")
+
+;; Synth construction is control-side; each name is an independent sound.
+(defn electro-layer [id waveform cutoff position gain attack release]
+  (install-synth! id {:voices 8}
+    (oscillator {:type waveform :color 80 :gain 80})
+    (filter {:type :lowpass :frequency cutoff :resonance 48})
+    (envelope {:attack attack :decay 48 :sustain 64 :release release})
+    (mulp)
+    (pan {:panning position})
+    (out {:gain gain})))
+
+(doseq [i (range 4)]
+  (electro-layer (keyword (str "pad-" i)) :saw (+ 54 (* i 8))
+                 (+ 12 (* i 32)) 5 48 48)
+  (electro-layer (keyword (str "arp-" i)) :pulse (+ 76 (* i 8))
+                 (- 112 (* i 32)) 6 1 24))
+(electro-layer :sub :sine 64 64 18 0 16)
+(electro-layer :metal-tom :trisaw 112 48 10 0 12)
+
+(def bass-notes [:c2 :c2 :ab1 :bb1 :c2 :eb2 :f2 :g1])
+(def stab-chords [[:c4 :eb4 :g4] [:c4 :f4 :ab4]
+                  [:ab3 :c4 :eb4] [:bb3 :d4 :f4]])
+
+;; Pads enter in bar 3, arps in bar 5; the full drop starts at bar 9.
+;; Four different octaves/voicings, not copies of a single voice reservation.
+(doseq [bar (range 18)]
+  (let [start (* bar 4) chord (nth stab-chords (mod bar 4))]
+    (play :sub (nth bass-notes (mod bar 8)) {:at start :dur 3})
+    (if (>= bar 2)
+      (doseq [layer (range 4) pitch chord]
+        (play (keyword (str "pad-" layer))
+              (+ (note-number pitch) (nth [-12 0 7 12] layer))
+              {:at start :dur 15/4})))
+    (if (>= bar 4)
+      (doseq [layer (range 4) step (range 8)]
+        (play (keyword (str "arp-" layer))
+              (+ (note-number (nth chord (mod (+ step layer) 3)))
+                 (nth [0 12 -12 7] layer))
+              {:at (+ start (* step 1/2) (* layer 1/32)) :dur 3/8})))
+    ;; At each drop, add a sustained four-part chord on each arp as well.
+    ;; This brings actual simultaneous notes over the old 32-voice ceiling.
+    (if (and (>= bar 8) (= (mod bar 4) 0))
+      (doseq [layer (range 4) pitch [60 63 67 72]]
+        (play (keyword (str "arp-" layer)) (+ pitch (* layer 3))
+              {:at start :dur 3})))
+    (if (= (mod bar 4) 3)
+      (doseq [step (range 8)]
+        (play :metal-tom (- 60 (* step 3))
+              {:at (+ start 2 (* step 1/4)) :dur 1/8})))))
