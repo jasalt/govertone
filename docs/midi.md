@@ -115,7 +115,9 @@ sequencer backend, which also sees PipeWire and virtual ports exposed through
 ALSA (for example `snd-virmidi`). Builds without cgo have no backend. The
 ALSA backend has not yet been run against a real sequencer: its behavior on
 Fedora 44 still needs to be recorded here. `midi.VirtualBackend` is an
-in-process backend used by the tests and by `lgs doctor`.
+in-process backend used by the tests and by `lgs doctor`. Options for other
+platforms and cgo-free builds, including gitlab.com/gomidi/midi, are compared
+in [MIDI backend options](midi-backends.md).
 
 ## Deterministic replay
 

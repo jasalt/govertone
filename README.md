@@ -192,6 +192,7 @@ The operational subcommands (`render`, `repl`, `patch`, `doctor`) accept `--log-
 - [smoothing and automation](docs/automation.md)
 - [control buses](docs/control-buses.md)
 - [MIDI input, bindings and replay](docs/midi.md)
+- [MIDI backend options (gomidi, cgo-free)](docs/midi-backends.md)
 - [nREPL and editor integration](docs/nrepl.md)
 - [patch DSL](docs/patch-dsl.md)
 - [unit reference](docs/unit-reference.md)
