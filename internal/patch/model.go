@@ -173,6 +173,11 @@ type CompiledPatch struct {
 	Diagnostics []Diagnostic     `json:"diagnostics"`
 	Bindings    []ControlBinding `json:"control_bindings,omitempty"`
 	Generation  PatchGeneration  `json:"generation"`
+	// Shards are the Sointu VM patches the logical patch is planned into.
+	// Patch equals Shards[0].Patch when there is exactly one shard.
+	Shards []CompiledShard `json:"shards"`
+	// VoiceMap maps each logical voice (Layout FirstVoice-based) to a shard.
+	VoiceMap []VoiceAddress `json:"voice_map"`
 }
 
 func normalizeName(s string) string { return strings.TrimPrefix(strings.TrimSpace(s), ":") }

@@ -89,13 +89,17 @@ func NewFilter(p ParameterMap, o ...UnitOption) (UnitSpec, error) { return NewUn
 func NewDelay(p ParameterMap, o ...UnitOption) (UnitSpec, error)  { return NewUnit("delay", p, o...) }
 func NewOut(p ParameterMap, o ...UnitOption) (UnitSpec, error)    { return NewUnit("out", p, o...) }
 
+// MaxInstrumentVoices is the structural upper bound for one synth. The
+// active compiler may impose a lower limit (see Compiler.MaxVoicesPerInstrument).
+const MaxInstrumentVoices = 128
+
 func NewInstrument(id InstrumentID, voices int, units ...UnitSpec) (InstrumentSpec, error) {
 	normalized, err := NormalizeInstrumentID(id)
 	if err != nil {
 		return InstrumentSpec{}, err
 	}
-	if voices < 1 || voices > 32 {
-		return InstrumentSpec{}, fmt.Errorf("instrument :%s voice count must be 1..32, got %d", normalized, voices)
+	if voices < 1 || voices > MaxInstrumentVoices {
+		return InstrumentSpec{}, fmt.Errorf("instrument :%s voice count must be 1..%d, got %d", normalized, MaxInstrumentVoices, voices)
 	}
 	if len(units) == 0 {
 		return InstrumentSpec{}, fmt.Errorf("instrument :%s must contain at least one unit", normalized)

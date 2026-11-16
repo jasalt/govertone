@@ -260,5 +260,7 @@ func cloneCompiled(in *CompiledPatch) *CompiledPatch {
 	out.Layout = cloneLayout(in.Layout)
 	out.Diagnostics = append([]Diagnostic(nil), in.Diagnostics...)
 	out.Bindings = append([]ControlBinding(nil), in.Bindings...)
+	out.Shards = cloneShards(in.Shards)
+	out.VoiceMap = append([]VoiceAddress(nil), in.VoiceMap...)
 	return &out
 }

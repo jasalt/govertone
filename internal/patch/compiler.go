@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/vsariola/sointu"
-	sointuvm "github.com/vsariola/sointu/vm"
 )
 
 type CompilerMode string
@@ -23,12 +22,40 @@ type Compiler struct {
 	MaxInstruments        int
 	MaxUnitsPerInstrument int
 	MaxAggregateUnits     int
-	MaxVoices             int
-	MaxPortableStack      int
+	// MaxVoices is the logical aggregate voice limit across all shards.
+	MaxVoices int
+	// MaxVoicesPerInstrument bounds one synth's :voices; values above
+	// VoicesPerVM are split into slices running in separate Sointu VMs.
+	MaxVoicesPerInstrument int
+	// VoicesPerVM is the capacity of one Sointu VM (SointuVoicesPerVM).
+	VoicesPerVM int
+	// MaxShards bounds the number of Sointu VMs a patch may be planned into.
+	MaxShards        int
+	MaxPortableStack int
 }
 
+// Default limits. The planner supports multiple Sointu VMs, but the audio
+// engine still owns exactly one (issue #29 step 2), so the defaults keep a
+// single 32-voice VM. ShardedCompiler shows the intended multi-VM limits.
+const (
+	DefaultMaxShards              = 1
+	DefaultMaxVoices              = SointuVoicesPerVM * DefaultMaxShards
+	DefaultMaxVoicesPerInstrument = SointuVoicesPerVM
+)
+
 func NewCompiler() *Compiler {
-	return &Compiler{Schemas: NewSchemaRegistry(), Mode: ModePortable, MaxInstruments: 64, MaxUnitsPerInstrument: 63, MaxAggregateUnits: 4096, MaxVoices: 32, MaxPortableStack: 8}
+	return &Compiler{Schemas: NewSchemaRegistry(), Mode: ModePortable, MaxInstruments: 64, MaxUnitsPerInstrument: 63, MaxAggregateUnits: 4096, MaxVoices: DefaultMaxVoices, MaxVoicesPerInstrument: DefaultMaxVoicesPerInstrument, VoicesPerVM: SointuVoicesPerVM, MaxShards: DefaultMaxShards, MaxPortableStack: 8}
+}
+
+// NewShardedCompiler returns a compiler with the multi-VM limits planned in
+// docs/multi-instance-engine.md: 128 voices per synth, 256 in total, at most
+// 16 Sointu VMs.
+func NewShardedCompiler() *Compiler {
+	c := NewCompiler()
+	c.MaxShards = 16
+	c.MaxVoices = 256
+	c.MaxVoicesPerInstrument = MaxInstrumentVoices
+	return c
 }
 
 func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
@@ -66,7 +93,7 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 			diagnostics = append(diagnostics, diag("unit-limit-exceeded", in.ID, 0, "", "", fmt.Sprintf("Synth :%s has %d units; maximum is %d", in.ID, len(in.Units), c.MaxUnitsPerInstrument)))
 		}
 		if firstVoice+in.Voices > c.MaxVoices {
-			diagnostics = append(diagnostics, diag("voice-limit-exceeded", in.ID, 0, "", "", fmt.Sprintf("aggregate voice count %d exceeds Sointu limit %d", firstVoice+in.Voices, c.MaxVoices)))
+			diagnostics = append(diagnostics, diag("voice-limit-exceeded", in.ID, 0, "", "", fmt.Sprintf("aggregate voice count %d exceeds limit %d", firstVoice+in.Voices, c.MaxVoices)))
 		}
 		sUnits := make([]sointu.Unit, len(in.Units))
 		unitIndices := map[UnitID]int{}
@@ -137,50 +164,54 @@ func (c *Compiler) Compile(input PatchSpec) (*CompiledPatch, error) {
 		return nil, err
 	}
 	result.Fingerprint = fp
-	bytecode, err := sointuvm.NewBytecode(result.Patch, sointuvm.AllFeatures{}, 120)
-	if err != nil {
-		return nil, &CompileError{[]Diagnostic{diag("patch-compile-failed", "", 0, "", "", fmt.Sprintf("Sointu rejected patch: %v", err))}}
+	plan, planDiagnostics := c.planShards(normalized)
+	if hasErrors(planDiagnostics) {
+		return nil, &CompileError{append(diagnostics, planDiagnostics...)}
 	}
-	for instrumentIndex, instrument := range normalized.Instruments {
-		compiledInstrument := result.Layout.Instruments[instrument.ID]
-		if !hasEnabledEnvelope(instrument) {
-			for unitIndex, unit := range instrument.Units {
-				if unit.Disabled {
-					continue
-				}
-				for _, parameter := range outputGainParameters(unit.Type) {
-					operand, ok := bytecode.ParameterOperands[sointuvm.ParameterAddress{Instrument: instrumentIndex, Unit: unitIndex, Parameter: parameter}]
-					if ok {
-						compiledInstrument.HardReleaseOperands = append(compiledInstrument.HardReleaseOperands, operand)
-					}
-				}
+	shards, voiceMap, err := c.buildShards(normalized, result.Patch, plan, 120)
+	if err != nil {
+		return nil, err
+	}
+	result.Shards, result.VoiceMap = shards, voiceMap
+	// Logical views: the first slice of each instrument supplies its
+	// hard-release operands and bindings. With one shard these are exactly the
+	// single-VM values; with several, operands are local to that slice's
+	// shard and the engine must use Shards[*] instead.
+	seen := map[InstrumentID]bool{}
+	for _, shard := range shards {
+		for _, placed := range shard.Instruments {
+			if seen[placed.ID] {
+				continue
 			}
+			seen[placed.ID] = true
+			in := result.Layout.Instruments[placed.ID]
+			in.HardReleaseOperands = append([]int(nil), placed.HardReleaseOperands...)
+			result.Layout.Instruments[placed.ID] = in
 		}
-		result.Layout.Instruments[instrument.ID] = compiledInstrument
-
-		for unitIndex, unit := range instrument.Units {
-			names := make([]string, 0, len(unit.ControlBindings))
-			for name := range unit.ControlBindings {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			for _, name := range names {
-				reference := unit.ControlBindings[name]
-				descriptor := instrument.Parameters[reference.Parameter]
-				operand, ok := bytecode.ParameterOperands[sointuvm.ParameterAddress{Instrument: instrumentIndex, Unit: unitIndex, Parameter: name}]
-				if !ok {
-					return nil, &CompileError{[]Diagnostic{diag("control-binding-missing", instrument.ID, unitIndex, unit.ID, name, "Sointu control operand was not generated")}}
-				}
-				result.Bindings = append(result.Bindings, ControlBinding{Index: len(result.Bindings), InstrumentID: instrument.ID, ParameterID: reference.Parameter, UnitID: unit.ID, UnitIndex: unitIndex, UnitParameter: name, Operand: operand, Scope: descriptor.Scope, Minimum: descriptor.Minimum, Maximum: descriptor.Maximum, Default: descriptor.Default, Smoothing: descriptor.Smoothing, Transform: reference.Transform})
+	}
+	firstShard := map[InstrumentID]int{}
+	for _, shard := range shards {
+		for _, placed := range shard.Instruments {
+			if _, ok := firstShard[placed.ID]; !ok {
+				firstShard[placed.ID] = shard.Index
 			}
 		}
 	}
-	// Force Sointu bytecode construction before the candidate reaches audio.
-	synth, err := (sointuvm.GoSynther{}).Synth(result.Patch, 120)
-	if err != nil {
-		return nil, &CompileError{[]Diagnostic{diag("patch-compile-failed", "", 0, "", "", fmt.Sprintf("Sointu rejected patch: %v", err))}}
+	for _, id := range result.Layout.OrderedIDs {
+		for _, binding := range shards[firstShard[id]].Bindings {
+			if binding.InstrumentID == id {
+				binding.Index = len(result.Bindings)
+				result.Bindings = append(result.Bindings, binding)
+			}
+		}
 	}
-	synth.Close()
+	if len(shards) == 1 {
+		result.Patch = shards[0].Patch
+	} else {
+		// No single Sointu patch can hold the aggregate; Patch is the logical
+		// (unrunnable) view and only Shards may be given to a VM.
+		result.Patch = nil
+	}
 	return result, nil
 }
 
@@ -199,8 +230,8 @@ func (c *Compiler) normalize(input PatchSpec) (PatchSpec, []Diagnostic) {
 			continue
 		}
 		instrumentSeen[id] = true
-		if raw.Voices < 1 || raw.Voices > c.MaxVoices {
-			diagnostics = append(diagnostics, diag("invalid-voice-count", id, 0, "", "", fmt.Sprintf("Synth :%s voice count must be 1..%d, got %d", id, c.MaxVoices, raw.Voices)))
+		if raw.Voices < 1 || raw.Voices > c.maxInstrumentVoices() {
+			diagnostics = append(diagnostics, diag("invalid-voice-count", id, 0, "", "", fmt.Sprintf("Synth :%s voice count must be 1..%d, got %d", id, c.maxInstrumentVoices(), raw.Voices)))
 		}
 		if len(raw.Metadata.Doc) > 64*1024 {
 			diagnostics = append(diagnostics, diag("metadata-limit-exceeded", id, 0, "", "", fmt.Sprintf("Synth :%s documentation exceeds 64 KiB", id)))
@@ -487,6 +518,13 @@ func (c *Compiler) analyzeStack(id InstrumentID, units []sointu.Unit) []Diagnost
 		out = append(out, Diagnostic{Severity: SeverityWarning, Code: "unconsumed-stack", Instrument: id, Message: fmt.Sprintf("Synth :%s leaves %d unconsumed stack values", id, depth), Details: map[string]any{"maximum_depth": maxDepth}})
 	}
 	return out
+}
+func (c *Compiler) maxInstrumentVoices() int {
+	limit := c.MaxVoicesPerInstrument
+	if limit <= 0 {
+		limit = SointuVoicesPerVM
+	}
+	return min(limit, c.MaxVoices)
 }
 func modulationPort(unitType, port string) (int, bool) {
 	port = normalizeName(port)

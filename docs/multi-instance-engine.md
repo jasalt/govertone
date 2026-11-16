@@ -1,6 +1,6 @@
 # Multi-instance Sointu engine (transparent voice sharding)
 
-Status: **accepted design, not yet implemented** — tracked in [#29](https://github.com/jasalt/govertone/issues/29). This document records the architectural decision. Until #29 is closed, the single-VM limits and workarounds in [Sointu restrictions](sointu-restrictions.md) remain in effect.
+Status: **accepted design; step 1 (planner) implemented, engine pending** — tracked in [#29](https://github.com/jasalt/govertone/issues/29). This document records the architectural decision. Until #29 is closed, the single-VM limits and workarounds in [Sointu restrictions](sointu-restrictions.md) remain in effect.
 
 ## Problem
 
@@ -137,6 +137,16 @@ User code does not change:
 - Native, WebAssembly, and 4klang exports remain single-patch, ≤ 32-voice targets. `lgs` uses only the Go VM.
 - Configured voices cost CPU even when silent (Sointu executes all of them). A 256-voice patch is about 8× a 32-voice patch. Realistic `:voices` values remain good practice, and `(patch-info)` will report the configured total.
 - No multi-threaded shard rendering at first. It may be added later behind a deterministic join, because shard outputs are independent until mixing.
+
+## Implementation status
+
+**Step 1, the planner, is done** (`internal/patch/shards.go`, tests in `shards_test.go`):
+
+- `CompiledPatch.Shards` and `CompiledPatch.VoiceMap` are produced for every compile. Each shard has its own validated Sointu patch, shard-local bindings and hard-release operands, a fingerprint, and a seed.
+- When one shard is used, `CompiledPatch.Patch`, `Bindings`, and hard-release operands are identical to the pre-sharding values. `TestShardSingleVMIdentity` and `TestShardBindingsMatchSingleVM` check this. A multi-shard compile sets `Patch` to `nil`, so it cannot be passed to a single VM by mistake.
+- `NewCompiler()` still has `MaxShards = 1`, so the defaults stay at 32 voices per synth and in total. The engine still owns one VM, so user-visible limits have not changed. `NewShardedCompiler()` applies the planned limits: 128 per synth, 256 total, and 16 VMs. Step 2 makes it the default.
+- `NewInstrument` now accepts up to 128 voices (`MaxInstrumentVoices`). The compiler enforces the active per-synth limit with `invalid-voice-count`.
+- Coupling rules beyond section 2: an instrument containing an enabled `in` unit is never sliced, because its voices may read each other's aux writes. Disabled units are ignored for coupling.
 
 ## Implementation plan
 

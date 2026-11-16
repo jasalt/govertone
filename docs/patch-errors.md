@@ -33,6 +33,8 @@ Possible codes are `:unknown-reference-instrument`, `:unknown-reference-unit`, a
 
 Duplicate synth/unit IDs report `:duplicate-instrument-id` or `:duplicate-unit-id`. Invalid IDs, more than 63 units per instrument, aggregate voices above 32, and portable stack overflow are rejected before Sointu update. These are aggregate/bytecode restrictions rather than recoverable update errors; see [Sointu restrictions and workarounds](sointu-restrictions.md).
 
+The multi-VM planner ([multi-instance engine](multi-instance-engine.md)) adds three more codes. `:coupled-group-voice-limit-exceeded` means synths linked by `aux`/`in` channels or cross-synth `send`, or one synth with an `in` unit or voice-addressed `send`, need more voices than one Sointu VM provides; the diagnostic names the linked synths. `:shard-limit-exceeded` means the patch would need more Sointu VMs than allowed. `:invalid-voice-count` reports the active per-synth limit.
+
 ## Update failures
 
 A candidate compiled by temporary Sointu can still theoretically fail `Synth.Update`; this reports `:patch-update-failed`, records a failed patch trace, and does not publish or commit its generation. Reevaluate a corrected definition; restarting the runtime is not required.
