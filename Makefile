@@ -63,6 +63,9 @@ test-automation: build
 	$(GO) test ./internal/audio ./internal/lisp
 	mkdir -p out/fixtures
 	$(LGS) render --input testdata/automation/linear-ramp.lg --output out/fixtures/automation-ramp.wav --duration 2s --tail 0s --automation-trace out/fixtures/automation-ramp.json
+	$(LGS) automation validate --input testdata/automation/linear-ramp.lg --duration 3s
+	! $(LGS) automation validate --input testdata/automation/stale-target.lg --duration 3s
+	$(LGS) controls inspect --input testdata/controls/exact-step.lg --synth control-step > out/fixtures/control-step-inspect.json
 
 test-nrepl:
 	$(GO) test ./internal/nrepl

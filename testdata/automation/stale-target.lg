@@ -1,0 +1,8 @@
+; Invalid on purpose: the ramp targets :level, but the synth is redefined
+; without :level before rendering starts, so the lane's target is gone.
+; `lgs automation validate` must report it and exit 7.
+(defsynth fading {:voices 1 :params {:level {:default 20 :min 1 :max 128}}}
+  (oscillator {:type :sine}) (out {:gain (param :level)}))
+(play :fading :a4 {:dur 8})
+(ramp :fading :level 20 100 {:dur 4})
+(defsynth fading {:voices 1} (oscillator {:type :sine}) (out {:gain 64}))

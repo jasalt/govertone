@@ -33,7 +33,7 @@ func versionText() string {
 	return fmt.Sprintf("music-runtime %s\ngo: %s\nlet-go: %s\nsointu: %s", version, runtime.Version(), letGoCommit, sointuCommit)
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: lgs <repl|render|analyze|patch|midi|doctor|version> [options]")
+	fmt.Fprintln(os.Stderr, "usage: lgs <repl|render|analyze|patch|controls|automation|midi|doctor|version> [options]")
 }
 func main() { code := run(os.Args[1:]); os.Exit(code) }
 func run(args []string) int {
@@ -55,6 +55,10 @@ func run(args []string) int {
 		return patchCommand(args[1:])
 	case "midi":
 		return midiCommand(args[1:])
+	case "controls":
+		return controlsCommand(args[1:])
+	case "automation":
+		return automationCommand(args[1:])
 	case "repl":
 		return replCommand(args[1:])
 	default:

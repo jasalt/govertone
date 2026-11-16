@@ -177,6 +177,8 @@ python3 scripts/validate-audio.py --input out/dynamic-synth.wav
 * `lgs render --input FILE --output FILE --duration DURATION [--tail 2s] [--block-size 512] [--report FILE] [--event-trace FILE] [--patch-trace FILE] [--control-trace FILE] [--automation-trace FILE] [--then FILE --then-at DURATION]`
 * `lgs analyze --input FILE [--report FILE]`
 * `lgs patch <compile|validate|inspect> --input FILE [--report FILE] [--format json]`
+* `lgs controls inspect --input FILE [--synth ID]` prints named parameters and their Sointu operand bindings as JSON
+* `lgs automation validate --input FILE [--duration 10s]` renders offline and exits 7 if any control or automation was rejected, stale, late or dropped
 * `lgs midi list [--json]`, `lgs midi monitor --device NAME`, `lgs midi replay --input FILE --program FILE --output FILE --duration DURATION`
 * `lgs doctor [--no-audio]`
 * `lgs version`
