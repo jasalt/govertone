@@ -3,7 +3,7 @@ package audio
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/example/letgo-sointu/internal/clock"
@@ -54,6 +54,7 @@ type automationState struct {
 	lanes         map[uint64]*valueLane
 	authoritative map[automationTarget]uint64
 	cancelled     map[uint64]bool
+	order         []uint64 // per-frame lane order scratch, preallocated
 	traceMu       sync.Mutex
 	trace         []AutomationTraceEvent
 	highWater     int
@@ -61,7 +62,7 @@ type automationState struct {
 }
 
 func newAutomationState() *automationState {
-	return &automationState{smoothing: map[automationTarget]*valueLane{}, lanes: map[uint64]*valueLane{}, authoritative: map[automationTarget]uint64{}, cancelled: map[uint64]bool{}, trace: make([]AutomationTraceEvent, 0, 1024)}
+	return &automationState{smoothing: map[automationTarget]*valueLane{}, lanes: map[uint64]*valueLane{}, authoritative: map[automationTarget]uint64{}, cancelled: map[uint64]bool{}, order: make([]uint64, 0, maxActiveAutomation), trace: make([]AutomationTraceEvent, 0, 1024)}
 }
 
 func EvaluateAutomationCurve(curve string, start, end, position float64) (float64, error) {
@@ -222,11 +223,13 @@ func (e *Engine) advanceControls(frame uint64) {
 			delete(e.automation.smoothing, target)
 		}
 	}
-	ids := make([]uint64, 0, len(e.automation.lanes))
+	// Lanes apply in ID order. The scratch slice holds at most
+	// maxActiveAutomation IDs, so neither append nor the sort allocates.
+	ids := e.automation.order[:0]
 	for id := range e.automation.lanes {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	for _, id := range ids {
 		lane := e.automation.lanes[id]
 		value, done := laneValue(lane, frame)
