@@ -110,3 +110,39 @@ func TestCrossfadeOptionsAreValidated(t *testing.T) {
 		t.Fatalf("zero crossfade: %v %v", v, err)
 	}
 }
+
+func TestTransitionInfoReportsTheLastUpdate(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	evalAll(t, a, migrationTone, `(defbus b {})`, `(map-control! b :tone :level)`, `(ctl :tone :level 100)`)
+	render(t, a, 1000)
+	// Removing :level resets the control and deactivates the mapping.
+	evalAll(t, a, `(defsynth tone {:voices 3} (oscillator {:type :sine}) (out {}))`)
+	info := func(key string) string {
+		t.Helper()
+		v, err := a.Lisp.Eval(`(` + key + ` (transition-info))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v.String()
+	}
+	for key, want := range map[string]string{
+		":active": "true", ":strategy": ":crossfade", ":curve": ":equal-power",
+		":start-frame": "1000", ":end-frame": "1882",
+		":deactivated-mappings": `["b -> tone:level"]`,
+	} {
+		if got := info(key); got != want {
+			t.Fatalf("%s = %s, want %s", key, got, want)
+		}
+	}
+	if got := info(":reset-controls"); !strings.Contains(got, "tone:level") {
+		t.Fatalf("reset-controls = %s", got)
+	}
+	render(t, a, 1000)
+	if got := info(":active"); got != "false" {
+		t.Fatalf("active after the fade = %s", got)
+	}
+}

@@ -43,6 +43,9 @@ type PatchUpdateTrace struct {
 	ResetControls       []string `json:"reset_controls,omitempty"`
 	MigratedAutomation  []uint64 `json:"migrated_automation,omitempty"`
 	CancelledAutomation []string `json:"cancelled_automation,omitempty"`
+	// DeactivatedMappings lists bus mappings whose parameter disappeared or
+	// changed scope; they resume when it returns.
+	DeactivatedMappings []string `json:"deactivated_mappings,omitempty"`
 }
 type PatchTrace struct {
 	Updates []PatchUpdateTrace `json:"updates"`
@@ -223,7 +226,7 @@ func (e *Engine) UpdatePatch(compiled *patchmodel.CompiledPatch, bpm float64, ch
 		result.InvalidatedHandles = len(owned)
 	}
 	e.migrateControls(oldControls, uint64(frame), preserve, &entry)
-	e.refreshBusesLocked()
+	e.refreshBusesLocked(&entry)
 	entry.InvalidatedHandles, entry.PreservedHandles = result.InvalidatedHandles, result.PreservedHandles
 	e.patchGeneration.Store(uint64(compiled.Generation))
 	e.patchFingerprint.Store(compiled.Fingerprint)

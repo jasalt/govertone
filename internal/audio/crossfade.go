@@ -148,10 +148,36 @@ func (e *Engine) crossfadePatch(compiled *patchmodel.CompiledPatch, bpm float64,
 	e.hardReleaseOperands = newHardReleaseOperands(compiled)
 	e.initializeHardReleaseControls(compiled)
 	e.migrateControls(oldControls, frame, false, &entry)
-	e.refreshBusesLocked()
+	e.refreshBusesLocked(&entry)
 	entry.InvalidatedHandles = invalidated
 	e.patchGeneration.Store(uint64(compiled.Generation))
 	e.patchFingerprint.Store(compiled.Fingerprint)
 	e.recordPatchUpdate(entry)
 	return PatchUpdateResult{Generation: compiled.Generation, AppliedFrame: frame, Changed: true, InvalidatedHandles: invalidated, Strategy: patchmodel.TransitionCrossfade}, nil
+}
+
+// TransitionInfo describes the most recent patch transition (phase-3.md
+// §25.5). Active is true while a crossfade is still rendering.
+type TransitionInfo struct {
+	Active        bool
+	Last          PatchUpdateTrace
+	StartFrame    uint64
+	EndFrame      uint64
+	HasTransition bool
+}
+
+func (e *Engine) TransitionInfo() TransitionInfo {
+	e.patchTraceMu.Lock()
+	var info TransitionInfo
+	for i := len(e.patchTrace) - 1; i >= 0; i-- {
+		if e.patchTrace[i].Result == "applied" {
+			info.Last, info.HasTransition = e.patchTrace[i], true
+			break
+		}
+	}
+	e.patchTraceMu.Unlock()
+	info.StartFrame = info.Last.AppliedFrame
+	info.EndFrame = info.StartFrame + info.Last.CrossfadeFrames
+	info.Active = info.Last.CrossfadeFrames > 0 && e.frame.Load() < info.EndFrame
+	return info
 }

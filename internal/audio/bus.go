@@ -195,10 +195,26 @@ func (e *Engine) refreshBusLocked(bus *ControlBus) {
 	}
 }
 
-// refreshBusesLocked reapplies every bus after a patch update.
-func (e *Engine) refreshBusesLocked() {
-	for _, bus := range e.buses {
+// refreshBusesLocked reapplies every bus after a patch update and records
+// mappings that became inactive, in bus order.
+func (e *Engine) refreshBusesLocked(entry *PatchUpdateTrace) {
+	ids := make([]BusID, 0, len(e.buses))
+	for id := range e.buses {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		bus := e.buses[id]
+		before := make([]bool, len(bus.Mappings))
+		for i, m := range bus.Mappings {
+			before[i] = m.Active
+		}
 		e.refreshBusLocked(bus)
+		for i, m := range bus.Mappings {
+			if before[i] && !m.Active {
+				entry.DeactivatedMappings = append(entry.DeactivatedMappings, fmt.Sprintf("%s -> %s", id, busKey(m)))
+			}
+		}
 	}
 }
 

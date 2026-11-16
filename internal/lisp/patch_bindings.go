@@ -15,7 +15,7 @@ import (
 )
 
 func (r *Runtime) installPatchBindings() error {
-	bindings := map[string]func([]vm.Value) (vm.Value, error){"unit": r.unitFn, "instrument": r.instrumentFn, "patch": r.patchFn, "ref": r.refFn, "param": r.paramFn, "install-patch!": r.installPatchFn, "validate-patch": r.validatePatchFn, "compile-patch": r.compilePatchFn, "install-synth!": r.installSynthFn, "synths": r.synthsFn, "synth-info": r.synthInfoFn, "remove-synth!": r.removeSynthFn, "patch-generation": r.patchGenerationFn, "patch-info": r.patchInfoFn, "synth-form": r.synthFormFn, "synth-fingerprint": r.synthFingerprintFn, "patch-fingerprint": r.patchFingerprintFn}
+	bindings := map[string]func([]vm.Value) (vm.Value, error){"unit": r.unitFn, "instrument": r.instrumentFn, "patch": r.patchFn, "ref": r.refFn, "param": r.paramFn, "install-patch!": r.installPatchFn, "validate-patch": r.validatePatchFn, "compile-patch": r.compilePatchFn, "install-synth!": r.installSynthFn, "synths": r.synthsFn, "synth-info": r.synthInfoFn, "remove-synth!": r.removeSynthFn, "patch-generation": r.patchGenerationFn, "patch-info": r.patchInfoFn, "synth-form": r.synthFormFn, "synth-fingerprint": r.synthFingerprintFn, "patch-fingerprint": r.patchFingerprintFn, "transition-info": r.transitionInfoFn}
 	for _, kind := range patchmodel.NewSchemaRegistry().Types() {
 		name := string(kind)
 		kindCopy := kind
@@ -951,4 +951,34 @@ func (r *Runtime) synthIDValue(v vm.Value) (patchmodel.InstrumentID, error) {
 	}
 	s, err := keywordName(v, "synth")
 	return patchmodel.InstrumentID(s), err
+}
+
+// transitionInfoFn reports the most recent patch transition, including the
+// symbolic control migration warnings (phase-3.md §25.5).
+func (r *Runtime) transitionInfoFn(args []vm.Value) (vm.Value, error) {
+	if len(args) != 0 {
+		return vm.NIL, fmt.Errorf("transition-info expects no arguments")
+	}
+	info := r.engine.TransitionInfo()
+	if !info.HasTransition {
+		return mapOf(vm.Keyword("active"), vm.FALSE), nil
+	}
+	last := info.Last
+	strings := func(values []string) vm.Value {
+		out := make([]vm.Value, 0, len(values))
+		for _, value := range values {
+			out = append(out, vm.String(value))
+		}
+		return vm.NewPersistentVector(out)
+	}
+	result := mapOf(vm.Keyword("active"), vm.Boolean(info.Active), vm.Keyword("strategy"), vm.Keyword(last.Strategy),
+		vm.Keyword("old-generation"), vm.Int(last.OldGeneration), vm.Keyword("new-generation"), vm.Int(last.NewGeneration),
+		vm.Keyword("start-frame"), vm.Int(info.StartFrame), vm.Keyword("end-frame"), vm.Int(info.EndFrame),
+		vm.Keyword("invalidated-handles"), vm.Int(last.InvalidatedHandles), vm.Keyword("preserved-handles"), vm.Int(last.PreservedHandles),
+		vm.Keyword("migrated-controls"), strings(last.MigratedControls), vm.Keyword("reset-controls"), strings(last.ResetControls),
+		vm.Keyword("cancelled-automation"), strings(last.CancelledAutomation), vm.Keyword("deactivated-mappings"), strings(last.DeactivatedMappings))
+	if last.CrossfadeCurve != "" {
+		result = result.Assoc(vm.Keyword("curve"), vm.Keyword(last.CrossfadeCurve)).(*vm.PersistentMap)
+	}
+	return result, nil
 }

@@ -34,6 +34,18 @@ The update strategy, recorded as `strategy` in the patch trace:
 - **crossfade**: the default for anything else (added, removed or incompatible instruments). Every new Sointu VM is built control-side. At the update frame, the old VMs move to a fade slot, sounding notes there get note-off, and their output (release tails included) fades out over the crossfade duration, then the old VMs are closed. The new VMs play at unity gain from the update frame: they start silent, so fading them in would only attenuate new notes. Handles are invalidated and allocator ownership is reset (`invalidated_handles`), and controls migrate as below. The trace records `crossfade_frames` and `crossfade_curve`. The fade gain depends only on the absolute frame, so output stays block-size invariant. The old VMs render alongside the new ones only during the fade. An update during a running fade cuts the earlier fade short.
 - **hard-swap**: VMs are updated in place, sounding notes are released (envelope-less voices are muted), every handle is invalidated, and allocator ownership is reset. Old release requests cannot affect new voices because IDs, generation, and voice epochs are checked by host ownership. It is used with `{:transition :hard}` or `{:crossfade 0}`.
 
+`(transition-info)` describes the most recent update:
+
+```clojure
+{:active true :strategy :crossfade :curve :equal-power
+ :old-generation 3 :new-generation 4 :start-frame 1000 :end-frame 1882
+ :invalidated-handles 1 :preserved-handles 0
+ :migrated-controls [] :reset-controls ["tone:level: parameter removed"]
+ :cancelled-automation [] :deactivated-mappings ["b -> tone:level"]}
+```
+
+`:active` is true while a crossfade is still rendering. `:reset-controls`, `:cancelled-automation` and `:deactivated-mappings` are the migration warnings; the patch trace (`--patch-trace`) records the same fields.
+
 `defsynth` options choose the transition:
 
 | Option | Meaning |
