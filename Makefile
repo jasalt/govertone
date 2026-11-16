@@ -1,7 +1,7 @@
 GO ?= go
 LGS := ./out/lgs
 
-.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-nrepl lint doctor render-fixtures analyze-fixtures acceptance clean
+.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-midi test-transitions test-nrepl benchmark benchmark-controls benchmark-crossfade acceptance-phase3 lint doctor render-fixtures analyze-fixtures acceptance clean
 bootstrap:
 	./scripts/bootstrap-fedora.sh
 
@@ -67,7 +67,39 @@ test-automation: build
 test-nrepl:
 	$(GO) test ./internal/nrepl
 
-acceptance: lint test test-race test-patch test-audio doctor
+test-midi: build
+	$(GO) test ./internal/midi
+	$(GO) test ./internal/lisp -run 'MIDI|Virtual'
+	$(GO) test ./internal/midi -run '^$$' -fuzz FuzzParser -fuzztime 10s
+	$(GO) test ./internal/midi -run '^$$' -fuzz FuzzReadLog -fuzztime 10s
+	mkdir -p out/fixtures
+	$(LGS) midi replay --input testdata/midi/scale.midilog --program testdata/midi/synth.lg --output out/fixtures/midi-scale.wav --duration 1s --tail 250ms --midi-trace out/fixtures/midi-scale-trace.json
+	$(LGS) midi replay --input testdata/midi/scale.midilog --program testdata/midi/synth.lg --output out/fixtures/midi-scale-b333.wav --duration 1s --tail 250ms --block-size 333
+	python3 scripts/validate-midi-fixture.py out/fixtures/midi-scale.wav out/fixtures/midi-scale-b333.wav
+
+test-transitions: build
+	$(GO) test ./internal/patch -run 'Diff|Fingerprint|Compatible'
+	$(GO) test ./internal/lisp -run 'Crossfade|Transition|Migrate|InPlace'
+	mkdir -p out/fixtures
+	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/crossfade-edit.lg --then-at 500ms --output out/fixtures/crossfade.wav --duration 1s --tail 0s --patch-trace out/fixtures/crossfade-patches.json
+	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/hard-edit.lg --then-at 500ms --output out/fixtures/hard-swap.wav --duration 1s --tail 0s --patch-trace out/fixtures/hard-swap-patches.json
+	python3 scripts/validate-transition-fixture.py out/fixtures/crossfade.wav out/fixtures/hard-swap.wav
+
+# Benchmarks print ns per 512-frame block; the real-time budget is 11.6 ms.
+benchmark-controls:
+	mkdir -p out
+	$(GO) test ./internal/lisp -run '^$$' -bench 'Control|Automation|32Synths|8Voices|MIDI' -benchmem | tee out/benchmark-controls.txt
+
+benchmark-crossfade:
+	mkdir -p out
+	$(GO) test ./internal/lisp -run '^$$' -bench 'Crossfade|Redefinition' -benchmem | tee out/benchmark-crossfade.txt
+
+benchmark: benchmark-controls benchmark-crossfade
+	$(GO) test ./internal/audio -run '^$$' -bench Engine -benchmem | tee out/benchmark-engine.txt
+
+acceptance-phase3: test-controls test-automation test-midi test-transitions test-nrepl
+
+acceptance: lint test test-race test-patch test-audio acceptance-phase3 doctor
 
 clean:
 	rm -rf out
