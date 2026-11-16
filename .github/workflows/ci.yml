@@ -24,3 +24,10 @@ jobs:
       - uses: actions/checkout@v4
       - run: go test ./...
       - run: make build doctor test-patch test-audio
+  nix:
+    # The flake dev shell (flake.nix) must keep passing full acceptance.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix develop --command make acceptance
