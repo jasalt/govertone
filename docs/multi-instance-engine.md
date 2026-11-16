@@ -98,6 +98,46 @@ Bytecode, `ParameterOperands`, and hard-release operands are computed per shard 
 - **Automation** keeps the existing per-frame path: advance controls, then render one frame from each shard.
 - **Scratch sizing:** scratch buffers are allocated control-side for the maximum callback block size (Oto and offline renderers use known sizes). If a block is larger, the engine splits it internally. No allocation happens on the audio path.
 
+### 4a. Mixing and output sinks
+
+Mixing has two separate layers, and they stay separate.
+
+**Shard mixing happens inside the engine.** At each event-split segment, every shard renders the same frames into its preallocated float32 scratch buffer. The buffers are then summed in ascending shard order with unity gain. This matches how one Sointu VM already sums its voices into its output accumulator, so the result has no extra normalization or limiting. A single shard renders straight into `dst`. Exact-frame events, block-size invariance, and offline/real-time equivalence all depend on shard mixing staying here, inside `RenderBlock`.
+
+**Output goes through a sink.** `RenderBlock` produces one float32 stereo 44.1 kHz buffer for each callback. Sinks consume that buffer:
+
+```
+shards ──(exact-frame, float32, fixed order)──► Engine mix ──► Sink
+                                                                ├─ offline WAV   (float32; canonical)
+                                                                ├─ Sointu Oto    (float32; current real time)
+                                                                └─ let-go *audio* Stream (int16; planned, #27)
+```
+
+#### Alignment with the let-go audio seam
+
+let-go `main` (PRs nooga/let-go#1089 and #1107, tracked for v1.14 in nooga/let-go#969, untagged as of 2026-11-16) adds:
+
+- `rt.Audio`, bound at `*audio*`. Its Go-only `Stream(io.Reader)` lets a continuously synthesizing module join the host's mixer and receive a stoppable, fadeable handle.
+- `pkg/audio.Mixer`: a pure-Go mixer that sums streams in float64 and clamps the result to interleaved stereo int16 at 44.1 kHz. It plays through **one Oto device per process**, tuned with `audio.Default().Configure(Options{Queue, DeviceFrames})` or `LETGO_AUDIO_QUEUE` / `LETGO_AUDIO_DEVICE_FRAMES`.
+
+**Rejected: one let-go stream per shard.** The let-go mixer pulls each stream independently, so it cannot render shards at shared event-split frames. It would also clamp each shard to int16 before summing, so one loud shard could clip even when the mix would not, and quantization noise would add up per shard. Offline rendering cannot go through a live mixer, so offline and real-time output would use different code paths. Stream start/stop/pause fades (about 5 ms) would also apply unevenly to the slices of one logical synth.
+
+**Accepted: the engine output becomes one let-go stream.** After the let-go upgrade (#27), add an `--audio-backend letgo` sink. It wraps `Engine.RenderBlock` in an `io.Reader` that renders exactly `len(p)/4` frames and converts float32 to int16 into a preallocated buffer. It then registers that reader with `rt.AudioVia(...).Stream`, or with `pkg/audio.Default()` directly. Benefits:
+
+- **One audio device per process.** Oto refuses a second context ("oto: context is already created"). A let-go build with `-tags audio_oto` would therefore conflict with `lgs`'s own Sointu Oto context. The let-go sink removes the conflict and lets `audio/tone` and `audio/sample` play over the synths.
+- **Configurable latency.** Users can tune the device queue and buffer size through let-go `Options` or the `LETGO_AUDIO_*` variables, instead of Sointu's fixed 2048-frame player buffer.
+- **Whole-engine control.** The stream handle gives master gain, a fade-out on quit, and pause.
+
+The following must be handled and documented before the let-go sink becomes the default:
+
+- **int16 and clamping.** Real-time output becomes 16-bit (about 96 dB dynamic range) and hard-clips anything over full scale. Offline float32 WAV output remains canonical. Report clipped samples in stats.
+- **Pause stops the engine clock.** A paused stream is not read, and `Engine.Frame()` advances only when the stream is read, so beat time freezes. Either document this as transport pause or map the handle's pause to `stop-all`.
+- **Lock coupling.** The let-go mixer renders streams while holding its mutex, so other `*audio*` calls wait up to one engine render (a few ms per block). This is acceptable, but it must stay bounded.
+- **Start fade.** A stream fades in over about 5 ms, so a note at frame 0 sounds slightly quieter in real time than offline.
+- **No audio-path allocation.** The int16 conversion buffer is grown once on the first read and reused afterward.
+
+The existing Sointu Oto sink remains available until the let-go sink has been tested by ear.
+
 ### 5. Deterministic noise
 
 The controlled-VM patch (`third_party/patches/sointu-controlled-go-vm.md`) adds `GoSynth.SetRandomSeed(uint32)`. Shard 0 keeps seed 1, so single-shard output stays identical. Shard *n* uses a fixed derivation such as `1 + n·0x9E3779B1`. This makes slices decorrelated and renders reproducible.
@@ -153,9 +193,10 @@ User code does not change:
 The tracking issue lists these steps in order:
 
 1. **Planner** (`internal/patch`): logical limits, coupling graph, slicing, placement, per-shard bytecode and bindings, diagnostics, and a single-shard identity test.
-2. **Engine** (`internal/audio`, controlled VM): shard set, voice map, mixing, per-shard controls, hard release, automation, VM seed patch, and trace fields.
+2. **Engine** (`internal/audio`, controlled VM): shard set, voice map, fixed-order float32 shard mixing (section 4a), per-shard controls, hard release, automation, VM seed patch, and trace fields. Also add an output `Sink` interface around the current Sointu Oto player, with no behavior change.
 3. **Updates** (`internal/audio`, `internal/lisp`): per-shard diff and atomic installation, plus update traces with shard detail.
 4. **API, docs, and acceptance**: introspection, README and restriction docs, a >32-voice example, block-size-invariance and deterministic-render fixtures across shards, and benchmarks.
+5. **let-go audio sink** (#27, after let-go v1.14 is tagged): send the mixed engine output as a single `*audio*` stream, as described in section 4a. This is independent of steps 1–4.
 
 Acceptance criteria for the whole change:
 

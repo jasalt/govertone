@@ -22,6 +22,8 @@ Allocation chooses the lowest voice whose reservation ended before the new start
 
 The engine currently owns one Sointu VM, so the aggregate patch is limited to 32 voices. The accepted direction is to keep logical instruments and voices everywhere above the engine and to compile the logical patch into ≤ 32-voice shards. Each shard runs in its own VM; all shards render in lockstep at the same event-split frames and are summed in a fixed order. A patch that fits in one VM stays on one shard and renders identically. See [multi-instance engine](multi-instance-engine.md).
 
+Shard mixing stays inside the engine so exact-frame timing and block-size invariance are preserved. The single mixed float32 output then goes to a sink: an offline WAV, the current Sointu Oto player, or, planned after the let-go v1.14 upgrade (#27), one stream on let-go's `*audio*` mixer so the process shares a single audio device. See [mixing and output sinks](multi-instance-engine.md#4a-mixing-and-output-sinks).
+
 ## Shutdown
 
 Shutdown is idempotent at component level: stop scheduling, enqueue releases with `stop-all`, close Oto, stop the transport, then close Sointu. Offline rendering always stops at timeline plus tail even if a voice sustains.
