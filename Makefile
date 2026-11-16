@@ -1,7 +1,7 @@
 GO ?= go
 LGS := ./out/lgs
 
-.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-midi test-transitions test-nrepl benchmark benchmark-controls benchmark-crossfade acceptance-phase3 lint doctor render-fixtures analyze-fixtures acceptance clean
+.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-midi test-transitions test-nrepl test-stability benchmark benchmark-controls benchmark-crossfade acceptance-phase3 lint doctor render-fixtures analyze-fixtures acceptance clean
 bootstrap:
 	./scripts/bootstrap-fedora.sh
 
@@ -84,6 +84,10 @@ test-transitions: build
 	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/crossfade-edit.lg --then-at 500ms --output out/fixtures/crossfade.wav --duration 1s --tail 0s --patch-trace out/fixtures/crossfade-patches.json
 	$(LGS) render --input testdata/transitions/drone.lg --then testdata/transitions/hard-edit.lg --then-at 500ms --output out/fixtures/hard-swap.wav --duration 1s --tail 0s --patch-trace out/fixtures/hard-swap-patches.json
 	python3 scripts/validate-transition-fixture.py out/fixtures/crossfade.wav out/fixtures/hard-swap.wav
+
+# Accelerated one hour of musical time (Phase 3 §32.3), about 10 minutes.
+test-stability:
+	LGS_STABILITY_MINUTES=60 $(GO) test ./internal/nrepl -run Stability -timeout 60m -count 1 -v
 
 # Benchmarks print ns per 512-frame block; the real-time budget is 11.6 ms.
 benchmark-controls:
