@@ -245,6 +245,14 @@ func shardInstrumentAt(compiled *patchmodel.CompiledPatch, address patchmodel.Vo
 }
 
 func (e *Engine) recordPatchUpdate(entry PatchUpdateTrace) {
+	if entry.Result == "applied" {
+		switch entry.Strategy {
+		case string(patchmodel.TransitionCrossfade):
+			e.crossfades.Add(1)
+		case string(patchmodel.TransitionHardSwap):
+			e.hardSwaps.Add(1)
+		}
+	}
 	e.patchTraceMu.Lock()
 	e.patchTrace = append(e.patchTrace, entry)
 	e.patchTraceMu.Unlock()

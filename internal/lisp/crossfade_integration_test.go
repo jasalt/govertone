@@ -174,4 +174,15 @@ func TestTransitionInfoReportsTheLastUpdate(t *testing.T) {
 	if got := info(":cost"); got != "nil" {
 		t.Fatalf("a hard swap has no fade cost: %s", got)
 	}
+	// §34.1 counters: the initial definition and the :level removal
+	// crossfaded, the last update was a hard swap, and the bus never moved.
+	stats := a.Engine.Stats(a.Allocator)
+	if stats.Crossfades != 2 || stats.HardSwaps != 1 || stats.BusUpdates != 0 {
+		t.Fatalf("transition stats %+v", stats)
+	}
+	evalAll(t, a, `(bus-set! b 0.5)`)
+	render(t, a, 512)
+	if got := a.Engine.Stats(a.Allocator).BusUpdates; got != 1 {
+		t.Fatalf("bus updates = %d", got)
+	}
 }

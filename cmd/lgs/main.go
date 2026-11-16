@@ -452,6 +452,13 @@ func replCommand(args []string) int {
 	}
 	stats := a.Engine.Stats(a.Allocator)
 	fmt.Fprintf(os.Stderr, "frames=%d queue_high_water=%d voices_high_water=%d underruns=%d late=%d dropped=%d max_render=%s\n", stats.FramesRendered, stats.MaxSchedulerDepth, stats.ActiveVoiceHighWater, stats.Underruns, stats.LateEvents, stats.DroppedEvents, stats.MaxRenderDuration)
+	m := a.Lisp.MIDIStats()
+	fmt.Fprintf(os.Stderr, "controls_applied=%d controls_rejected=%d automation_high_water=%d automation_cancelled=%d bus_updates=%d crossfades=%d hard_swaps=%d crossfade_underruns=%d midi_received=%d midi_late=%d midi_dropped=%d\n",
+		stats.ControlEventsApplied, stats.ControlEventsRejected, stats.ActiveAutomationHighWater, stats.AutomationCancellations, stats.BusUpdates, stats.Crossfades, stats.HardSwaps, stats.CrossfadeUnderruns, m.Received, m.Late, m.Dropped+m.QueueOverflows)
+	if nreplServer != nil {
+		n := nreplServer.Stats()
+		fmt.Fprintf(os.Stderr, "nrepl_sessions=%d nrepl_evaluations=%d nrepl_interrupts=%d\n", n.Sessions, n.Evaluations, n.Interrupts)
+	}
 	return 0
 }
 func loopbackAddress(address string) bool {

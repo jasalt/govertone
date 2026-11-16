@@ -22,6 +22,10 @@ type Stats struct {
 	DroppedEvents             uint64        `json:"dropped_events"`
 	MaxRenderDuration         time.Duration `json:"maximum_render_block_duration"`
 	ControlEventsApplied      uint64        `json:"control_events_applied"`
+	BusUpdates                uint64        `json:"bus_updates"`
+	Crossfades                uint64        `json:"crossfades_performed"`
+	HardSwaps                 uint64        `json:"hard_swaps_performed"`
+	CrossfadeUnderruns        uint64        `json:"crossfade_underruns"`
 	ControlEventsRejected     uint64        `json:"control_events_rejected"`
 	ActiveAutomationHighWater int           `json:"active_automation_high_water_mark"`
 	AutomationCancellations   uint64        `json:"automation_cancellations"`
@@ -40,23 +44,27 @@ type Engine struct {
 	layout   map[instruments.InstrumentID]instruments.Definition
 	renderMu sync.Mutex
 	// updateMu serializes patch updates; shard VMs only change under it.
-	updateMu            sync.Mutex
-	patchGeneration     atomic.Uint64
-	patchFingerprint    atomic.Value
-	patchRequest        atomic.Uint64
-	patchTraceMu        sync.Mutex
-	patchTrace          []PatchUpdateTrace
-	traceMu             sync.Mutex
-	closeOnce           sync.Once
-	trace               []scheduler.TraceEvent
-	late                atomic.Uint64
-	dropped             atomic.Uint64
-	maxRender           atomic.Int64
-	controlApplied      atomic.Uint64
-	controlRejected     atomic.Uint64
-	controls            *controlState
-	hardReleaseOperands map[shardInstrument][]int
-	automation          *automationState
+	updateMu         sync.Mutex
+	patchGeneration  atomic.Uint64
+	patchFingerprint atomic.Value
+	patchRequest     atomic.Uint64
+	patchTraceMu     sync.Mutex
+	patchTrace       []PatchUpdateTrace
+	traceMu          sync.Mutex
+	closeOnce        sync.Once
+	trace            []scheduler.TraceEvent
+	late             atomic.Uint64
+	dropped          atomic.Uint64
+	maxRender        atomic.Int64
+	controlApplied   atomic.Uint64
+	busUpdates       atomic.Uint64
+	// Phase 3 §34.1 transition counters. crossfadeUnderruns counts fade
+	// blocks that took longer than their real-time duration.
+	crossfades, hardSwaps, crossfadeUnderruns atomic.Uint64
+	controlRejected                           atomic.Uint64
+	controls                                  *controlState
+	hardReleaseOperands                       map[shardInstrument][]int
+	automation                                *automationState
 	// buses and their mappings are symbolic and survive patch updates;
 	// mappedBy names the bus driving each mapped parameter.
 	buses    map[BusID]*ControlBus
@@ -140,7 +148,9 @@ func (e *Engine) RenderBlock(dst sointu.AudioBuffer) error {
 	defer func() {
 		d := time.Since(started).Nanoseconds()
 		if fading {
-			e.fadeCost.record(d, int64(len(dst))*int64(time.Second)/clock.SampleRate)
+			if e.fadeCost.record(d, int64(len(dst))*int64(time.Second)/clock.SampleRate) {
+				e.crossfadeUnderruns.Add(1)
+			}
 		}
 		for {
 			old := e.maxRender.Load()
@@ -263,6 +273,7 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 			return
 		}
 		e.controlApplied.Add(1)
+		e.busUpdates.Add(1)
 	case scheduler.EventStopAll:
 		for voiceIndex, id := range e.owners {
 			if id != 0 {
@@ -303,5 +314,5 @@ func (e *Engine) Stats(a *instruments.Allocator) Stats {
 	e.renderMu.Lock()
 	defer e.renderMu.Unlock()
 	m, o := e.scheduler.Stats()
-	return Stats{FramesRendered: e.frame.Load(), MaxSchedulerDepth: m, ActiveVoiceHighWater: a.HighWater(), LateEvents: e.late.Load(), DroppedEvents: o + e.dropped.Load(), MaxRenderDuration: time.Duration(e.maxRender.Load()), ControlEventsApplied: e.controlApplied.Load(), ControlEventsRejected: e.controlRejected.Load(), ActiveAutomationHighWater: e.automation.highWater, AutomationCancellations: e.automation.cancellations}
+	return Stats{FramesRendered: e.frame.Load(), MaxSchedulerDepth: m, ActiveVoiceHighWater: a.HighWater(), LateEvents: e.late.Load(), DroppedEvents: o + e.dropped.Load(), MaxRenderDuration: time.Duration(e.maxRender.Load()), ControlEventsApplied: e.controlApplied.Load(), BusUpdates: e.busUpdates.Load(), Crossfades: e.crossfades.Load(), HardSwaps: e.hardSwaps.Load(), CrossfadeUnderruns: e.crossfadeUnderruns.Load(), ControlEventsRejected: e.controlRejected.Load(), ActiveAutomationHighWater: e.automation.highWater, AutomationCancellations: e.automation.cancellations}
 }

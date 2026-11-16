@@ -202,7 +202,8 @@ func (c *transitionCost) reset() {
 // record is called by the audio thread with the block's render time and
 // real-time duration in nanoseconds. Only the render goroutine writes, so
 // plain load-then-store is enough.
-func (c *transitionCost) record(took, budget int64) {
+// record adds one fade block and reports whether it went over budget.
+func (c *transitionCost) record(took, budget int64) bool {
 	c.blocks.Add(1)
 	c.total.Add(took)
 	if took > c.max.Load() {
@@ -214,8 +215,10 @@ func (c *transitionCost) record(took, budget int64) {
 		}
 		if took > budget {
 			c.overBudget.Add(1)
+			return true
 		}
 	}
+	return false
 }
 
 func (c *transitionCost) snapshot() TransitionCost {

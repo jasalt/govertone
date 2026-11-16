@@ -243,6 +243,10 @@ func TestStructuredErrorsOutputBoundsAndInterrupt(t *testing.T) {
 	if responseField(responses, "value") != "42" {
 		t.Fatalf("evaluation unhealthy after interrupt: %#v", responses)
 	}
+	c.request(t, map[string]any{"op": "clone", "id": "clone"})
+	if got, want := server.Stats(), (musicnrepl.Stats{Sessions: 1, Evaluations: 3, Interrupts: 1}); got != want {
+		t.Fatalf("stats %+v, want %+v", got, want)
+	}
 }
 
 func TestSlowAndMalformedClientsDoNotBlockEvaluation(t *testing.T) {

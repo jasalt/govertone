@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	musiclisp "github.com/example/letgo-sointu/internal/lisp"
@@ -54,6 +55,19 @@ type Server struct {
 	conns    map[net.Conn]struct{}
 	sem      chan struct{}
 	wg       sync.WaitGroup
+
+	sessionsCreated, evaluations, interrupts atomic.Uint64
+}
+
+// Stats are the Phase 3 §34.1 nREPL counters.
+type Stats struct {
+	Sessions    uint64 `json:"nrepl_sessions"`
+	Evaluations uint64 `json:"nrepl_evaluations"`
+	Interrupts  uint64 `json:"nrepl_interrupts"`
+}
+
+func (s *Server) Stats() Stats {
+	return Stats{Sessions: s.sessionsCreated.Load(), Evaluations: s.evaluations.Load(), Interrupts: s.interrupts.Load()}
 }
 
 func New(runtime *musiclisp.Runtime, config Config) *Server {
@@ -210,10 +224,13 @@ func (s *Server) handle(conn net.Conn, msg map[string]any) {
 			"versions": map[string]any{"let-go": map[string]any{"major": "1", "minor": "11"}, "nrepl": map[string]any{"major": "1", "minor": "0"}},
 		})
 	case "eval":
+		s.evaluations.Add(1)
 		s.eval(conn, id, sessionID, msgString(msg, "code"))
 	case "load-file":
+		s.evaluations.Add(1)
 		s.eval(conn, id, sessionID, msgString(msg, "file"))
 	case "interrupt":
+		s.interrupts.Add(1)
 		// let-go v1.11.1 has no evaluator cancellation primitive. A protocol
 		// interrupt is therefore safe and cooperative: acknowledged music work
 		// is retained and audio continues.
@@ -245,6 +262,7 @@ func (s *Server) clone(conn net.Conn, id string) {
 	sessionID := randomID()
 	s.sessions[sessionID] = &session{id: sessionID, namespace: "music.core"}
 	s.mu.Unlock()
+	s.sessionsCreated.Add(1)
 	s.respond(conn, map[string]any{"id": id, "new-session": sessionID, "status": []string{"done"}})
 }
 

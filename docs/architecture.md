@@ -42,6 +42,8 @@ Structured logs use `log/slog` and go to stderr. Only control goroutines write t
 | debug | late MIDI | `midi_device`, `midi_channel`, `midi_message`, `midi_lateness_frames` |
 | debug | nREPL request | `nrepl_session`, `nrepl_operation`, `nrepl_id` |
 
+The run statistics (`Engine.Stats`, the REPL's exit summary, `(midi-stats)`, and `Server.Stats` for nREPL) count control events applied and rejected, automation high-water mark and cancellations, bus updates, crossfades and hard swaps performed, crossfade blocks over the real-time budget, MIDI received, late and dropped, and nREPL sessions, evaluations and interrupts.
+
 `event_id` and `automation_id` are the scheduler IDs that also appear in the event, control and automation traces. Per-event detail (applied frames, lateness, rejections) stays in those traces and in the run statistics rather than in logs.
 
 ## Shutdown
