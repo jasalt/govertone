@@ -34,27 +34,26 @@ type Compiler struct {
 	MaxPortableStack int
 }
 
-// Default limits. The planner supports multiple Sointu VMs, but the audio
-// engine still owns exactly one (issue #29 step 2), so the defaults keep a
-// single 32-voice VM. ShardedCompiler shows the intended multi-VM limits.
+// Default limits. A patch is planned into at most DefaultMaxShards Sointu
+// VMs of SointuVoicesPerVM voices each (docs/multi-instance-engine.md).
 const (
-	DefaultMaxShards              = 1
-	DefaultMaxVoices              = SointuVoicesPerVM * DefaultMaxShards
-	DefaultMaxVoicesPerInstrument = SointuVoicesPerVM
+	DefaultMaxShards              = 16
+	DefaultMaxVoices              = 256
+	DefaultMaxVoicesPerInstrument = MaxInstrumentVoices
 )
 
 func NewCompiler() *Compiler {
 	return &Compiler{Schemas: NewSchemaRegistry(), Mode: ModePortable, MaxInstruments: 64, MaxUnitsPerInstrument: 63, MaxAggregateUnits: 4096, MaxVoices: DefaultMaxVoices, MaxVoicesPerInstrument: DefaultMaxVoicesPerInstrument, VoicesPerVM: SointuVoicesPerVM, MaxShards: DefaultMaxShards, MaxPortableStack: 8}
 }
 
-// NewShardedCompiler returns a compiler with the multi-VM limits planned in
-// docs/multi-instance-engine.md: 128 voices per synth, 256 in total, at most
-// 16 Sointu VMs.
-func NewShardedCompiler() *Compiler {
+// NewSingleVMCompiler returns a compiler restricted to one Sointu VM (32
+// voices in total), the limit before multi-VM planning. It is useful for
+// patches that must also run in Sointu's native or WebAssembly players.
+func NewSingleVMCompiler() *Compiler {
 	c := NewCompiler()
-	c.MaxShards = 16
-	c.MaxVoices = 256
-	c.MaxVoicesPerInstrument = MaxInstrumentVoices
+	c.MaxShards = 1
+	c.MaxVoices = SointuVoicesPerVM
+	c.MaxVoicesPerInstrument = SointuVoicesPerVM
 	return c
 }
 

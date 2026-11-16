@@ -138,9 +138,13 @@ func TestRoutingResolution(t *testing.T) {
 }
 func TestVoiceLimit(t *testing.T) {
 	c := NewCompiler()
-	a, b := minimal(t, "a", "sine", 20), minimal(t, "b", "sine", 20)
-	if _, err := c.Compile(PatchSpec{Instruments: []InstrumentSpec{a, b}}); err == nil || !strings.Contains(err.Error(), "voice count") {
+	a, b, d := minimal(t, "a", "sine", 100), minimal(t, "b", "sine", 100), minimal(t, "d", "sine", 100)
+	if _, err := c.Compile(PatchSpec{Instruments: []InstrumentSpec{a, b, d}}); err == nil || !strings.Contains(err.Error(), "aggregate voice count 300 exceeds limit 256") {
 		t.Fatalf("got %v", err)
+	}
+	small := minimal(t, "small", "sine", 20)
+	if _, err := NewSingleVMCompiler().Compile(PatchSpec{Instruments: []InstrumentSpec{small, minimal(t, "other", "sine", 20)}}); err == nil || !strings.Contains(err.Error(), "voice count") {
+		t.Fatalf("single VM: got %v", err)
 	}
 }
 func BenchmarkCompileAggregate(b *testing.B) {

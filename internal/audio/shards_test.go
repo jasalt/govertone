@@ -60,7 +60,7 @@ func noiseSynth(t *testing.T, id patchmodel.InstrumentID, voices int) patchmodel
 
 func shardRegistry(t *testing.T, specs ...patchmodel.InstrumentSpec) *patchmodel.Registry {
 	t.Helper()
-	registry, err := patchmodel.NewRegistry(patchmodel.NewShardedCompiler(), specs...)
+	registry, err := patchmodel.NewRegistry(patchmodel.NewCompiler(), specs...)
 	if err != nil {
 		t.Fatal(err)
 	}

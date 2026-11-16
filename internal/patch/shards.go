@@ -175,6 +175,26 @@ func couplingGroups(spec PatchSpec) ([][]int, []bool) {
 	return groups, unsliceable
 }
 
+// readsMainBus reports whether any member has an enabled `in` unit reading
+// channel 0 or 1, where `out` and `outaux` write.
+func readsMainBus(spec PatchSpec, members []int) bool {
+	for _, m := range members {
+		for _, u := range spec.Instruments[m].Units {
+			if u.Disabled || u.Type != "in" {
+				continue
+			}
+			channel := 0
+			if v, ok := u.Parameters["channel"]; ok && v.Kind == ParameterInteger {
+				channel = v.Integer
+			}
+			if channel <= 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func instrumentList(spec PatchSpec, members []int) string {
 	names := make([]string, len(members))
 	for i, m := range members {
@@ -209,7 +229,11 @@ func (c *Compiler) planShards(spec PatchSpec) ([][]shardEntry, []Diagnostic) {
 		}
 		if len(members) > 1 {
 			if voices > perVM {
-				d := diag("coupled-group-voice-limit-exceeded", spec.Instruments[members[0]].ID, 0, "", "", fmt.Sprintf("Synths %s are coupled through aux/in channels or cross-synth send and must share one Sointu VM; together they use %d voices, limit %d", instrumentList(spec, members), voices, perVM))
+				hint := ""
+				if readsMainBus(spec, members) {
+					hint = "; an `in` on channel 0/1 reads the main output, so it couples with every synth using `out`"
+				}
+				d := diag("coupled-group-voice-limit-exceeded", spec.Instruments[members[0]].ID, 0, "", "", fmt.Sprintf("Synths %s are coupled through aux/in channels or cross-synth send and must share one Sointu VM; together they use %d voices, limit %d%s", instrumentList(spec, members), voices, perVM, hint))
 				d.Details = map[string]any{"instruments": instrumentList(spec, members), "voices": voices, "voices_per_vm": perVM}
 				diagnostics = append(diagnostics, d)
 				continue

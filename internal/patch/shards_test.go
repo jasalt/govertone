@@ -67,7 +67,7 @@ func fxBus(t *testing.T, id InstrumentID, channel int) InstrumentSpec {
 // A patch that fits one VM must produce exactly the pre-sharding Sointu patch
 // and operands, so the single-VM engine renders sample-identically.
 func TestShardSingleVMIdentity(t *testing.T) {
-	for _, c := range []*Compiler{NewCompiler(), NewShardedCompiler()} {
+	for _, c := range []*Compiler{NewSingleVMCompiler(), NewCompiler()} {
 		specs, err := BuiltinSpecs()
 		if err != nil {
 			t.Fatal(err)
@@ -121,8 +121,8 @@ func TestShardBindingsMatchSingleVM(t *testing.T) {
 	}
 }
 
-func TestShardDefaultCompilerKeepsSingleVMLimits(t *testing.T) {
-	c := NewCompiler()
+func TestShardSingleVMCompilerLimits(t *testing.T) {
+	c := NewSingleVMCompiler()
 	compileErr(t, c, "invalid-voice-count", minimal(t, "big", "sine", 33))
 	compileErr(t, c, "voice-limit-exceeded", minimal(t, "a", "sine", 20), minimal(t, "b", "sine", 20))
 	if _, err := NewInstrument("x", MaxInstrumentVoices+1, mustUnit(t, "out", nil)); err == nil {
@@ -134,7 +134,7 @@ func TestShardDefaultCompilerKeepsSingleVMLimits(t *testing.T) {
 }
 
 func TestShardSlicingAndPlacement(t *testing.T) {
-	c := NewShardedCompiler()
+	c := NewCompiler()
 	// 24 + 70 + 10 voices: pad slices into 32 + 32 + 6.
 	small := minimal(t, "small", "sine", 24)
 	pad := minimal(t, "pad", "saw", 70)
@@ -187,7 +187,7 @@ func TestShardSlicingAndPlacement(t *testing.T) {
 }
 
 func TestShardBindingsAreShardLocal(t *testing.T) {
-	c := NewShardedCompiler()
+	c := NewCompiler()
 	osc := mustUnit(t, "oscillator", ParameterMap{"gain": ControlParam(ControlReference{Parameter: "level", Transform: ParameterTransform{Scale: 1}})})
 	big, _ := NewInstrument("big", 40, mustUnit(t, "envelope", nil), osc, mustUnit(t, "mulp", nil), mustUnit(t, "out", nil))
 	big.Parameters["level"] = SynthParameter{ID: "level", Default: 64, Minimum: 0, Maximum: 128, Scope: ScopeInstrument}
@@ -203,7 +203,7 @@ func TestShardBindingsAreShardLocal(t *testing.T) {
 }
 
 func TestShardCouplingKeepsGroupsTogether(t *testing.T) {
-	c := NewShardedCompiler()
+	c := NewCompiler()
 	filler := minimal(t, "filler", "sine", 28)
 	src := auxSource(t, "src", 8, 3)
 	bus := fxBus(t, "bus", 3)
@@ -226,10 +226,13 @@ func TestShardCouplingKeepsGroupsTogether(t *testing.T) {
 }
 
 func TestShardMainBusInputCouplesEverything(t *testing.T) {
-	c := NewShardedCompiler()
+	c := NewCompiler()
 	a, b := minimal(t, "a", "sine", 20), minimal(t, "b", "sine", 20)
 	master := fxBus(t, "master", 0)
-	compileErr(t, c, "coupled-group-voice-limit-exceeded", a, b, master)
+	ce := compileErr(t, c, "coupled-group-voice-limit-exceeded", a, b, master)
+	if !strings.Contains(ce.Error(), "reads the main output") {
+		t.Fatalf("missing main-bus hint: %v", ce)
+	}
 	// Without the master-bus reader the same synths split across two VMs.
 	if compiled := compileOK(t, c, a, b); len(compiled.Shards) != 2 {
 		t.Fatalf("shards %v", shardSummary(compiled))
@@ -237,7 +240,7 @@ func TestShardMainBusInputCouplesEverything(t *testing.T) {
 }
 
 func TestShardUnsliceableInstruments(t *testing.T) {
-	c := NewShardedCompiler()
+	c := NewCompiler()
 	feedback, _ := NewInstrument("feedback", 40, mustUnit(t, "in", ParameterMap{"channel": IntParam(4)}), mustUnit(t, "oscillator", nil), mustUnit(t, "addp", nil), mustUnit(t, "aux", ParameterMap{"channel": IntParam(4)}))
 	compileErr(t, c, "coupled-group-voice-limit-exceeded", feedback)
 	disabled := mustUnit(t, "in", ParameterMap{"channel": IntParam(4)})
@@ -247,7 +250,7 @@ func TestShardUnsliceableInstruments(t *testing.T) {
 }
 
 func TestShardLimits(t *testing.T) {
-	c := NewShardedCompiler()
+	c := NewCompiler()
 	huge := minimal(t, "huge", "sine", 1)
 	huge.Voices = MaxInstrumentVoices + 1 // bypass the constructor check
 	compileErr(t, c, "invalid-voice-count", huge)
@@ -263,10 +266,10 @@ func TestShardLimits(t *testing.T) {
 // Rendering every shard of a 48-voice synth and mixing them must equal 48
 // separately rendered notes: slices are independently gated voices.
 func TestShardedRenderMatchesIndependentNotes(t *testing.T) {
-	c := NewShardedCompiler()
+	c := NewCompiler()
 	const voices, frames = 48, 4096
 	compiled := compileOK(t, c, minimal(t, "big", "sine", voices))
-	single := compileOK(t, NewCompiler(), minimal(t, "big", "sine", 1))
+	single := compileOK(t, NewSingleVMCompiler(), minimal(t, "big", "sine", 1))
 	render := func(patch sointu.Patch, triggers map[int]byte) sointu.AudioBuffer {
 		synth, err := (sointuvm.GoSynther{}).Synth(patch, 120)
 		if err != nil {
@@ -320,7 +323,7 @@ func TestShardedRenderMatchesIndependentNotes(t *testing.T) {
 }
 
 func TestShardRegistryCloneIsDeep(t *testing.T) {
-	registry, err := NewRegistry(NewShardedCompiler(), minimal(t, "big", "sine", 40))
+	registry, err := NewRegistry(NewCompiler(), minimal(t, "big", "sine", 40))
 	if err != nil {
 		t.Fatal(err)
 	}
