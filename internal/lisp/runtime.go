@@ -37,6 +37,9 @@ type Runtime struct {
 	// log receives structured control-side logs (phase-3.md §34). It is
 	// never used on the audio thread. Discarded unless SetLogger is called.
 	log *slog.Logger
+	// defaultFade is the crossfade for definitions without :crossfade.
+	fadeMu      sync.Mutex
+	defaultFade audio.Crossfade
 }
 
 // SetLogger directs structured logs; nil discards them.
@@ -94,7 +97,7 @@ func New(engine *audio.Engine, t *clock.Transport, q *scheduler.Scheduler, a *in
 	}
 	// music.core defines transport `now`, intentionally shadowing core/now.
 	rt.NS("music.core").Exclude("now")
-	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry, stdout: stdout, stderr: stderr, log: slog.New(slog.DiscardHandler)}
+	r := &Runtime{lg: lg, engine: engine, transport: t, queue: q, allocator: a, provider: p, patchRegistry: registry, stdout: stdout, stderr: stderr, log: slog.New(slog.DiscardHandler), defaultFade: audio.DefaultCrossfade}
 	defs := map[string]func([]vm.Value) (vm.Value, error){"play": r.play, "release": r.release, "at": r.at, "tempo": r.tempo, "now": r.now, "stop-all": r.stopAll, "instruments": r.instrumentsFn, "note-number": r.noteNumber, "load-file": r.loadFile}
 	for name, f := range defs {
 		v, e := vm.NativeFnType.Wrap(f)

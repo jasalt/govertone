@@ -56,7 +56,7 @@ The map also has `:strategies` (counts of applied updates per strategy this sess
 | `:transition :in-place` | rejected with `unsafe-transition` unless the change is compatible |
 | `:transition :crossfade` | crossfade even a compatible change |
 | `:transition :hard` | hard swap |
-| `:crossfade 0.02` | fade duration in seconds, 0–0.25, default 0.02 (0 means hard swap) |
+| `:crossfade 0.02` | fade duration in seconds, 0–0.25, default 0.02 or `lgs repl --crossfade` (0 means hard swap) |
 | `:crossfade-curve :equal-power` | `:equal-power` (old gain `cos(t·π/2)`, default) or `:linear` |
 
 ## Control migration

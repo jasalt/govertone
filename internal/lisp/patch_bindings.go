@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/example/letgo-sointu/internal/audio"
 	"github.com/example/letgo-sointu/internal/clock"
@@ -649,13 +650,31 @@ type transitionRequest struct {
 	fade audio.Crossfade
 }
 
-var autoTransition = transitionRequest{mode: "auto", fade: audio.DefaultCrossfade}
+// autoTransition is the request for updates without options. Its fade is
+// the runtime's default (SetDefaultCrossfade, lgs repl --crossfade).
+func (r *Runtime) autoTransition() transitionRequest {
+	r.fadeMu.Lock()
+	defer r.fadeMu.Unlock()
+	return transitionRequest{mode: "auto", fade: r.defaultFade}
+}
+
+// SetDefaultCrossfade sets the fade used when a definition gives no
+// :crossfade (0 to 250 ms; 0 makes changed synths hard swap).
+func (r *Runtime) SetDefaultCrossfade(d time.Duration) error {
+	if d < 0 || d > 250*time.Millisecond {
+		return fmt.Errorf("invalid-crossfade: default crossfade must be 0 to 250ms, got %s", d)
+	}
+	r.fadeMu.Lock()
+	r.defaultFade.Frames = uint64(math.Round(d.Seconds() * clock.SampleRate))
+	r.fadeMu.Unlock()
+	return nil
+}
 
 // transitionOption parses {:transition :auto|:in-place|:crossfade|:hard},
 // {:crossfade seconds} (0–0.25, default 0.02) and {:crossfade-curve
 // :equal-power|:linear} (phase-3.md §17.3, §18.3).
-func transitionOption(options map[string]vm.Value) (transitionRequest, error) {
-	request := autoTransition
+func (r *Runtime) transitionOption(options map[string]vm.Value) (transitionRequest, error) {
+	request := r.autoTransition()
 	if value := options["transition"]; value != nil {
 		name, err := keywordName(value, "synth :transition")
 		if err != nil {
@@ -760,7 +779,7 @@ func (r *Runtime) installSynthFn(args []vm.Value) (vm.Value, error) {
 	}
 	spec.Metadata.Source.Namespace = "music.core"
 	options, _ := mapEntries(args[1])
-	transition, err := transitionOption(options)
+	transition, err := r.transitionOption(options)
 	if err != nil {
 		return vm.NIL, err
 	}
@@ -811,7 +830,7 @@ func (r *Runtime) installPatchFn(args []vm.Value) (vm.Value, error) {
 		order = append(order, in.ID)
 	}
 	update := &patchmodel.PreparedRegistryUpdate{BaseGeneration: current.Generation, Definitions: definitions, Order: order, Compiled: compiled, Changed: compiled.Fingerprint != current.Fingerprint, ChangedIDs: order}
-	generation, strategy, err := r.installCandidate(update, autoTransition)
+	generation, strategy, err := r.installCandidate(update, r.autoTransition())
 	if err != nil {
 		return vm.NIL, err
 	}
@@ -867,7 +886,7 @@ func (r *Runtime) removeSynthFn(args []vm.Value) (vm.Value, error) {
 	if !update.Changed {
 		return mapOf(vm.Keyword("removed"), vm.FALSE, vm.Keyword("id"), vm.Keyword(id), vm.Keyword("generation"), vm.Int(update.BaseGeneration)), nil
 	}
-	generation, _, err := r.installCandidate(update, autoTransition)
+	generation, _, err := r.installCandidate(update, r.autoTransition())
 	if err != nil {
 		return vm.NIL, err
 	}

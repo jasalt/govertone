@@ -374,6 +374,7 @@ func replCommand(args []string) int {
 	nreplPortFile := fs.Bool("nrepl-port-file", true, "write .nrepl-port while nREPL is running")
 	midiDevices := fs.String("midi", "none", "connect MIDI inputs at startup: none, auto (every input) or a device name")
 	midiLatency := fs.Duration("midi-latency", 0, "MIDI input latency to compensate (0..1s)")
+	crossfade := fs.Duration("crossfade", 20*time.Millisecond, "default crossfade for synth redefinitions (0..250ms; 0 hard swaps)")
 	if fs.Parse(args) != nil {
 		return 2
 	}
@@ -393,12 +394,20 @@ func replCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "repl --midi-latency must be between 0 and 1s")
 		return 2
 	}
+	if *crossfade < 0 || *crossfade > 250*time.Millisecond {
+		fmt.Fprintln(os.Stderr, "repl --crossfade must be between 0 and 250ms")
+		return 2
+	}
 	a, err := newApp(os.Stdout, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	defer a.Close()
+	if err = a.Lisp.SetDefaultCrossfade(*crossfade); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	fmt.Fprintf(os.Stderr, "lgs %s; Sointu patch %s\n", version, a.Provider.Fingerprint())
 	connectMIDI(a, *midiDevices, *midiLatency)
 	var nreplServer *musicnrepl.Server

@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/audio"
@@ -184,5 +185,35 @@ func TestTransitionInfoReportsTheLastUpdate(t *testing.T) {
 	render(t, a, 512)
 	if got := a.Engine.Stats(a.Allocator).BusUpdates; got != 1 {
 		t.Fatalf("bus updates = %d", got)
+	}
+}
+
+// lgs repl --crossfade sets the fade for definitions without :crossfade.
+func TestDefaultCrossfadeIsConfigurable(t *testing.T) {
+	a, err := app.New(io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if err := a.Lisp.SetDefaultCrossfade(300 * time.Millisecond); err == nil {
+		t.Fatal("accepted a 300ms default crossfade")
+	}
+	if err := a.Lisp.SetDefaultCrossfade(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	evalAll(t, a, `(defsynth x {:voices 1} (oscillator {}) (out {}))`, `(defsynth x {:voices 2} (oscillator {}) (out {}))`)
+	if got := a.Engine.TransitionInfo().Last.CrossfadeFrames; got != 2205 {
+		t.Fatalf("default fade %d frames, want 2205", got)
+	}
+	// An explicit :crossfade still wins.
+	evalAll(t, a, `(defsynth x {:voices 3 :crossfade 0.01} (oscillator {}) (out {}))`)
+	if got := a.Engine.TransitionInfo().Last.CrossfadeFrames; got != 441 {
+		t.Fatalf("explicit fade %d frames, want 441", got)
+	}
+	if err := a.Lisp.SetDefaultCrossfade(0); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := a.Lisp.Eval(`(:transition (defsynth x {:voices 4} (oscillator {}) (out {})))`); err != nil || v.String() != ":hard-swap" {
+		t.Fatalf("zero default crossfade: %v %v", v, err)
 	}
 }
