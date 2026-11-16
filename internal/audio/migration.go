@@ -69,7 +69,7 @@ func (e *Engine) migrateControls(old *controlState, frame uint64, preserve bool,
 	}
 	a := e.automation
 	for target, lane := range a.smoothing {
-		if e.laneIncompatible(lane, preserve) != "" {
+		if e.laneIncompatible(&lane, preserve) != "" {
 			delete(a.smoothing, target)
 		}
 	}

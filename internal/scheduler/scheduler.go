@@ -90,7 +90,16 @@ func (s *Scheduler) Pop() (Event, bool) {
 	if len(s.h) == 0 {
 		return Event{}, false
 	}
-	return heap.Pop(&s.h).(Event), true
+	// Pop the root by hand: heap.Pop returns the Event boxed in an
+	// interface, which allocates on the audio thread.
+	root := s.h[0]
+	last := len(s.h) - 1
+	s.h[0] = s.h[last]
+	s.h = s.h[:last]
+	if last > 0 {
+		heap.Fix(&s.h, 0)
+	}
+	return root, true
 }
 
 // CancelHandle removes queued trigger/release events for a note handle at or

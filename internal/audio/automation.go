@@ -20,15 +20,13 @@ type automationTarget struct {
 }
 
 type valueLane struct {
-	id               uint64
-	target           automationTarget
-	startFrame       uint64
-	endFrame         uint64
-	startValue       float64
-	endValue         float64
-	curve            string
-	kind             string
-	cancelledAtFrame uint64
+	id         uint64
+	target     automationTarget
+	startFrame uint64
+	endFrame   uint64
+	startValue float64
+	endValue   float64
+	curve      string
 }
 
 type AutomationTraceEvent struct {
@@ -50,7 +48,9 @@ type AutomationTrace struct {
 }
 
 type automationState struct {
-	smoothing     map[automationTarget]*valueLane
+	// Values, not pointers: starting smoothing must not allocate. valueLane
+	// must stay at most 128 bytes, or the map stores it out of line again.
+	smoothing     map[automationTarget]valueLane
 	lanes         map[uint64]*valueLane
 	authoritative map[automationTarget]uint64
 	cancelled     map[uint64]bool
@@ -62,7 +62,7 @@ type automationState struct {
 }
 
 func newAutomationState() *automationState {
-	return &automationState{smoothing: map[automationTarget]*valueLane{}, lanes: map[uint64]*valueLane{}, authoritative: map[automationTarget]uint64{}, cancelled: map[uint64]bool{}, order: make([]uint64, 0, maxActiveAutomation), trace: make([]AutomationTraceEvent, 0, 1024)}
+	return &automationState{smoothing: map[automationTarget]valueLane{}, lanes: map[uint64]*valueLane{}, authoritative: map[automationTarget]uint64{}, cancelled: map[uint64]bool{}, order: make([]uint64, 0, maxActiveAutomation), trace: make([]AutomationTraceEvent, 0, 1024)}
 }
 
 func EvaluateAutomationCurve(curve string, start, end, position float64) (float64, error) {
@@ -130,7 +130,7 @@ func (e *Engine) applyScheduledControl(event scheduler.Event, at clock.FrameInde
 	} else if value, ok := e.controls.explicit[target.key]; ok {
 		start = value
 	}
-	e.automation.smoothing[target] = &valueLane{target: target, startFrame: uint64(at), endFrame: uint64(at) + frames, startValue: start, endValue: event.Value, curve: "linear", kind: "smoothing"}
+	e.automation.smoothing[target] = valueLane{target: target, startFrame: uint64(at), endFrame: uint64(at) + frames, startValue: start, endValue: event.Value, curve: "linear"}
 	return nil
 }
 
@@ -159,7 +159,7 @@ func (e *Engine) startAutomation(event scheduler.Event, at clock.FrameIndex) err
 		delete(e.automation.lanes, oldID)
 		e.automation.record(AutomationTraceEvent{ID: oldID, Kind: "replaced", Instrument: string(target.key.instrument), Parameter: string(target.key.parameter), Bus: string(target.bus), Voice: target.voice, Frame: uint64(at)})
 	}
-	lane := &valueLane{id: id, target: target, startFrame: uint64(at), endFrame: uint64(event.EndFrame), startValue: event.StartValue, endValue: event.EndValue, curve: event.Curve, kind: "automation"}
+	lane := &valueLane{id: id, target: target, startFrame: uint64(at), endFrame: uint64(event.EndFrame), startValue: event.StartValue, endValue: event.EndValue, curve: event.Curve}
 	e.automation.lanes[id] = lane
 	e.automation.authoritative[target] = id
 	if len(e.automation.lanes) > e.automation.highWater {
@@ -217,7 +217,7 @@ func (e *Engine) advanceControls(frame uint64) {
 		if _, automated := e.automation.authoritative[target]; automated {
 			continue
 		}
-		value, done := laneValue(lane, frame)
+		value, done := laneValue(&lane, frame)
 		_ = e.setTargetValue(target, value)
 		if done {
 			delete(e.automation.smoothing, target)
