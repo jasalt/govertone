@@ -108,7 +108,7 @@ func TestAcceleratedHourStability(t *testing.T) {
 			runtime.ReadMemStats(&stats)
 			t.Logf("%d min: heap %d KiB, goroutines %d", (step+1)/6, stats.HeapAlloc>>10, runtime.NumGoroutine())
 		}
-		if step == 6 { // after warm-up: every buffer exists
+		if step == min(6, steps/2) { // after warm-up: every buffer exists
 			runtime.GC()
 			runtime.ReadMemStats(&stats)
 			heap0, goroutines0 = stats.HeapAlloc, runtime.NumGoroutine()
