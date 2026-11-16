@@ -14,4 +14,18 @@ Phase 3 uses a minimal vendored Sointu v0.6.0 subset through the `go.mod` replac
 
 The Sointu public trigger convention is tracker-oriented: note 81 produces concert A4. `lgs` deliberately exposes standard MIDI (`A4 = 69`) and adds 12 only at the Sointu engine boundary. The event trace continues to report MIDI numbers.
 
+`flake.nix` defines a Nix dev shell with the same tools: Go 1.26 from `nixpkgs#go_1_26`, gcc, pkg-config, alsa-lib, GNU make, and Python with numpy and scipy. `flake.lock` pins nixpkgs. `make acceptance` passes in the shell with `CGO_ENABLED=1`, including `test-race` and the Python analysis. Update the pin with `nix flake update`.
+
+## Upstream let-go upgrade
+
+> **Pending upstream dependency (#27):** `lgs` stays on let-go v1.11.1 until **let-go v1.14** is tagged. That release adds the `*audio*` seam the planned `letgo` output sink needs ([§4a](multi-instance-engine.md#4a-mixing-and-output-sinks)). Upgrade once, straight to v1.14+, rather than to v1.13.
+
+The upgrade has to change these together:
+
+- **Go 1.27.** let-go v1.13.0+ declares `go 1.27`. Bump the `go` directive in `go.mod`, `go-version` in `.github/workflows/ci.yml`, `go = pkgs.go_1_26` → `pkgs.go_1_27` in `flake.nix`, and the version notes here and in the README. Fedora's `golang` package defaults to `GOTOOLCHAIN=local`, so `scripts/bootstrap-fedora.sh` works only once Fedora ships Go 1.27. Until then, use the Nix shell.
+- **Incomplete-input detection.** Replace `incomplete()` in `internal/lisp/runtime.go`, which matches error text, with `api.IsIncomplete` (available since v1.13.0).
+- **Sink.** Register the `letgo` sink as described in #27.
+
+let-go v1.13.0 was checked with Go 1.27.3 from Nix: it builds with cgo, `go test -race ./internal/...` passes, and its new graphics dependencies are not linked into `lgs`.
+
 The Fedora package names in `scripts/bootstrap-fedora.sh` were checked using `dnf info`: `git`, `golang`, `make`, `gcc`, `pkgconf-pkg-config`, `alsa-lib-devel`, `pipewire`, `pipewire-alsa`, `pipewire-pulseaudio`, `python3`, `python3-numpy`, and `python3-scipy`.

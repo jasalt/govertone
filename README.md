@@ -42,6 +42,17 @@ Phase 1 established the deterministic runtime, scheduler, fixed instruments, and
 
 The script verifies every package with `dnf info` before installing it. The implementation was developed with `go version go1.26.5 linux/amd64`.
 
+## Nix dev shell
+
+On any Linux or macOS machine with Nix (flakes enabled), `flake.nix` provides the same toolchain without installing system packages: Go 1.26, gcc, pkg-config, ALSA, GNU make, and Python with numpy and scipy.
+
+```sh
+nix develop                     # enter the shell
+nix develop -c make acceptance  # or run one command
+```
+
+The shell sets `GOTOOLCHAIN=local` and `CGO_ENABLED=1`, so it builds the real-time output and runs `make test-race` and the Python audio analysis. Hearing audio still needs a running PipeWire/ALSA sink on the host. Go is pinned to 1.26 until the let-go upgrade in #27; see [dependency pins](docs/dependencies.md#upstream-let-go-upgrade).
+
 ## Build and test
 
 ```sh
