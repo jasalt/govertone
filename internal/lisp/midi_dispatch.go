@@ -61,19 +61,22 @@ type ownerKey struct {
 // MIDITraceEntry records one dispatched message: its source, the scheduler
 // frame, and what was done with it.
 type MIDITraceEntry struct {
-	Sequence   uint64  `json:"sequence"`
-	Device     string  `json:"device"`
-	Message    string  `json:"message"`
-	Frame      uint64  `json:"frame"`
-	Late       bool    `json:"late,omitempty"`
-	LateFrames uint64  `json:"late_frames,omitempty"`
-	Action     string  `json:"action"`
-	Binding    uint64  `json:"binding,omitempty"`
-	Synth      string  `json:"synth,omitempty"`
-	Handle     uint64  `json:"handle,omitempty"`
-	Parameter  string  `json:"parameter,omitempty"`
-	Value      float64 `json:"value,omitempty"`
-	Detail     string  `json:"detail,omitempty"`
+	Sequence   uint64 `json:"sequence"`
+	Device     string `json:"device"`
+	Message    string `json:"message"`
+	Frame      uint64 `json:"frame"`
+	Late       bool   `json:"late,omitempty"`
+	LateFrames uint64 `json:"late_frames,omitempty"`
+	Action     string `json:"action"`
+	Binding    uint64 `json:"binding,omitempty"`
+	Synth      string `json:"synth,omitempty"`
+	// Handle is the note's trigger event ID; Event is the control event
+	// ID. Both match "id" in the scheduler trace (phase-3.md §34.2).
+	Handle    uint64  `json:"handle,omitempty"`
+	Event     uint64  `json:"event,omitempty"`
+	Parameter string  `json:"parameter,omitempty"`
+	Value     float64 `json:"value,omitempty"`
+	Detail    string  `json:"detail,omitempty"`
 }
 
 // MIDIStats counts MIDI traffic; every loss has its own counter.
@@ -280,11 +283,12 @@ func (r *Runtime) dispatchControl(s *midiState, b *midiBinding, e midi.Event, fr
 	value = min(descriptor.Maximum, max(descriptor.Minimum, value))
 	entry.Value = value
 	event := scheduler.Event{Frame: clock.FrameIndex(frame), Kind: scheduler.EventSetControl, Instrument: b.Synth, Parameter: string(b.Parameter), Value: value, Generation: uint64(r.engine.PatchGeneration())}
-	if _, err := r.queue.Add(event); err != nil {
+	added, err := r.queue.Add(event)
+	if err != nil {
 		r.dropped(s, entry, "control-queue-full", err)
 		return
 	}
-	entry.Action = "control"
+	entry.Action, entry.Event = "control", added.ID
 	s.record(entry)
 }
 

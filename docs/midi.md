@@ -56,7 +56,7 @@ Every loss is counted separately in `(midi-stats)`: `:late`,
 (matched but could not be scheduled, such as a full scheduler queue or a
 missing target) and `:queue-overflows` (the device's bounded input buffer was
 full). The trace (`--midi-trace`) lists every message with its source, frame,
-action and note handle.
+action, and either `handle` (a note's trigger event ID) or `event` (a control's event ID). Both match `id` in the scheduler trace (`--trace`).
 
 ## Devices
 

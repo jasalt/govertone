@@ -136,6 +136,24 @@ func TestMIDIControlChangeAndPitchBend(t *testing.T) {
 	if stats := a.Lisp.MIDIStats(); stats.Unmatched != 1 || stats.Dropped != 0 {
 		t.Fatalf("stats %+v", stats)
 	}
+	// Each control entry names the scheduler event it produced (§34.2).
+	applied := map[uint64]float64{}
+	for _, e := range traceOf(a, "set-control") {
+		applied[e.ID] = e.Value
+	}
+	controls := 0
+	for _, entry := range a.Lisp.MIDITrace() {
+		if entry.Action != "control" {
+			continue
+		}
+		controls++
+		if value, ok := applied[entry.Event]; !ok || value != entry.Value {
+			t.Fatalf("MIDI entry %+v does not match scheduler event %d", entry, entry.Event)
+		}
+	}
+	if controls != 5 {
+		t.Fatalf("%d control entries", controls)
+	}
 }
 
 func TestMIDIDisconnectReleasesDeviceNotesAndKeepsBindings(t *testing.T) {
