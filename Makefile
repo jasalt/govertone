@@ -1,7 +1,7 @@
 GO ?= go
 LGS := ./out/lgs
 
-.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-midi test-transitions test-nrepl test-stability benchmark benchmark-controls benchmark-crossfade acceptance-phase3 lint doctor render-fixtures analyze-fixtures acceptance clean
+.PHONY: bootstrap build test test-race test-audio test-patch test-controls test-automation test-midi test-transitions test-nrepl test-fuzz test-stability benchmark benchmark-controls benchmark-crossfade acceptance-phase3 lint doctor render-fixtures analyze-fixtures acceptance clean
 bootstrap:
 	./scripts/bootstrap-fedora.sh
 
@@ -70,6 +70,12 @@ test-automation: build
 test-nrepl:
 	$(GO) test ./internal/nrepl
 
+# Phase 3 §32.2 fuzz targets, 10 s each (MIDI ones run in test-midi).
+test-fuzz:
+	$(GO) test ./internal/lisp -run '^$$' -fuzz FuzzControlSession -fuzztime 10s
+	$(GO) test ./internal/patch -run '^$$' -fuzz FuzzPatchDiff -fuzztime 10s
+	$(GO) test ./internal/nrepl -run '^$$' -fuzz FuzzMessages -fuzztime 10s
+
 test-midi: build
 	$(GO) test ./internal/midi
 	$(GO) test ./internal/lisp -run 'MIDI|Virtual'
@@ -104,7 +110,7 @@ benchmark-crossfade:
 benchmark: benchmark-controls benchmark-crossfade
 	$(GO) test ./internal/audio -run '^$$' -bench Engine -benchmem | tee out/benchmark-engine.txt
 
-acceptance-phase3: test-controls test-automation test-midi test-transitions test-nrepl
+acceptance-phase3: test-controls test-automation test-midi test-transitions test-nrepl test-fuzz
 
 acceptance: lint test test-race test-patch test-audio acceptance-phase3 doctor
 

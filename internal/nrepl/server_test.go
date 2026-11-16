@@ -23,7 +23,7 @@ type client struct {
 	dec  *bencode.Decoder
 }
 
-func startServer(t *testing.T, maxOutput int) (*app.App, *musicnrepl.Server) {
+func startServer(t testing.TB, maxOutput int) (*app.App, *musicnrepl.Server) {
 	t.Helper()
 	a, err := app.New(io.Discard, io.Discard)
 	if err != nil {
@@ -49,7 +49,7 @@ func startServer(t *testing.T, maxOutput int) (*app.App, *musicnrepl.Server) {
 	return a, server
 }
 
-func dial(t *testing.T, server *musicnrepl.Server) *client {
+func dial(t testing.TB, server *musicnrepl.Server) *client {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", server.Addr().String(), time.Second)
 	if err != nil {
@@ -59,7 +59,7 @@ func dial(t *testing.T, server *musicnrepl.Server) *client {
 	return &client{conn: conn, dec: bencode.NewDecoder(conn)}
 }
 
-func (c *client) request(t *testing.T, request map[string]any) []map[string]any {
+func (c *client) request(t testing.TB, request map[string]any) []map[string]any {
 	t.Helper()
 	encoded, err := bencode.EncodeBytes(request)
 	if err != nil {
