@@ -11,7 +11,6 @@ import (
 	patchmodel "github.com/example/letgo-sointu/internal/patch"
 	"github.com/example/letgo-sointu/internal/scheduler"
 	"github.com/vsariola/sointu"
-	sointuvm "github.com/vsariola/sointu/vm"
 )
 
 type Stats struct {
@@ -29,12 +28,19 @@ type Stats struct {
 }
 
 type Engine struct {
-	synth               sointu.Synth
-	scheduler           *scheduler.Scheduler
-	frame               atomic.Uint64
-	owners              [32]uint64
-	layout              map[instruments.InstrumentID]instruments.Definition
-	renderMu            sync.Mutex
+	// shards are the Sointu VMs of the active patch, mixed in index order.
+	shards []*engineShard
+	// voiceMap translates a logical voice to (shard, local voice).
+	voiceMap  []patchmodel.VoiceAddress
+	scratch   sointu.AudioBuffer
+	scheduler *scheduler.Scheduler
+	frame     atomic.Uint64
+	// owners holds the note handle of every logical voice.
+	owners   []uint64
+	layout   map[instruments.InstrumentID]instruments.Definition
+	renderMu sync.Mutex
+	// updateMu serializes patch updates; shard VMs only change under it.
+	updateMu            sync.Mutex
 	patchGeneration     atomic.Uint64
 	patchFingerprint    atomic.Value
 	patchRequest        atomic.Uint64
@@ -49,37 +55,43 @@ type Engine struct {
 	controlApplied      atomic.Uint64
 	controlRejected     atomic.Uint64
 	controls            *controlState
-	hardReleaseOperands map[instruments.InstrumentID][]int
+	hardReleaseOperands map[shardInstrument][]int
 	automation          *automationState
 }
 
 func NewEngine(provider instruments.PatchProvider, q *scheduler.Scheduler, bpm float64) (*Engine, error) {
-	s, err := (sointuvm.GoSynther{}).Synth(provider.Patch(), int(bpm))
-	if err != nil {
-		return nil, fmt.Errorf("initialize Sointu: %w", err)
-	}
-	var compiled *patchmodel.CompiledPatch
+	compiled := providerCompiled(provider)
 	if source, ok := provider.(interface {
 		Compiled() *patchmodel.CompiledPatch
 	}); ok {
 		compiled = source.Compiled()
 	}
-	e := &Engine{synth: s, scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}, controls: newControlState(compiled), hardReleaseOperands: newHardReleaseOperands(compiled), automation: newAutomationState()}
+	if len(compiled.Shards) == 0 {
+		return nil, fmt.Errorf("initialize Sointu: compiled patch has no shards")
+	}
+	shards, err := newEngineShards(compiled, bpm)
+	if err != nil {
+		return nil, fmt.Errorf("initialize Sointu: %w", err)
+	}
+	e := &Engine{shards: shards, voiceMap: compiled.VoiceMap, owners: make([]uint64, len(compiled.VoiceMap)), scheduler: q, trace: make([]scheduler.TraceEvent, 0, 65536), patchTrace: make([]PatchUpdateTrace, 0, 128), layout: map[instruments.InstrumentID]instruments.Definition{}, controls: newControlState(compiled), hardReleaseOperands: newHardReleaseOperands(compiled), automation: newAutomationState()}
 	for _, definition := range provider.Instruments() {
 		e.layout[definition.ID] = definition
 	}
-	e.initializeHardReleaseControls()
+	e.ensureScratch()
+	e.initializeHardReleaseControls(compiled)
 	e.patchGeneration.Store(1)
 	e.patchFingerprint.Store(provider.Fingerprint())
 	return e, nil
 }
 func (e *Engine) Close() {
 	e.closeOnce.Do(func() {
+		// Same lock order as UpdatePatch: updateMu, then renderMu.
+		e.updateMu.Lock()
+		defer e.updateMu.Unlock()
 		e.renderMu.Lock()
 		defer e.renderMu.Unlock()
-		if e.synth != nil {
-			e.synth.Close()
-		}
+		closeShards(e.shards)
+		e.shards = nil
 	})
 }
 func (e *Engine) Frame() clock.FrameIndex { return clock.FrameIndex(e.frame.Load()) }
@@ -88,27 +100,21 @@ func (e *Engine) render(dst sointu.AudioBuffer, start uint64) error {
 	if e.automation.active() {
 		for index := range dst {
 			e.advanceControls(start + uint64(index))
-			n, _, err := e.synth.Render(dst[index:index+1], 1)
-			if err != nil {
+			if err := e.renderShards(dst[index : index+1]); err != nil {
 				return err
-			}
-			if n != 1 {
-				return fmt.Errorf("Sointu made no render progress")
 			}
 		}
 		return nil
 	}
-	for len(dst) > 0 {
-		n, _, err := e.synth.Render(dst, len(dst))
-		if err != nil {
-			return err
-		}
-		if n <= 0 {
-			return fmt.Errorf("Sointu made no render progress")
-		}
-		dst = dst[n:]
+	return e.renderShards(dst)
+}
+
+// ensureScratch allocates the shard mix buffer control-side when the patch
+// has more than one shard; the audio path never allocates.
+func (e *Engine) ensureScratch() {
+	if len(e.shards) > 1 && e.scratch == nil {
+		e.scratch = make(sointu.AudioBuffer, scratchFrames)
 	}
-	return nil
 }
 
 // RenderBlock splits at every event boundary; the output is therefore
@@ -168,7 +174,7 @@ func (e *Engine) RenderBlock(dst sointu.AudioBuffer) error {
 }
 func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 	voice := int(ev.Voice)
-	if ev.Kind == scheduler.EventTrigger || ev.Kind == scheduler.EventRelease || ((ev.Kind == scheduler.EventSetControl || ev.Kind == scheduler.EventStartAutomation) && ev.HandleID != 0) {
+	if addressesVoice(ev) {
 		definition, exists := e.layout[ev.Instrument]
 		if !exists || ev.VoiceOffset < 0 || ev.VoiceOffset >= definition.Voices {
 			e.dropped.Add(1)
@@ -176,16 +182,22 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 			return
 		}
 		voice = int(definition.FirstVoice) + ev.VoiceOffset
+		if voice >= len(e.owners) {
+			e.dropped.Add(1)
+			e.recordEvent(ev, at, voice, ev.Kind.String()+"-failed")
+			return
+		}
 	}
 	switch ev.Kind {
 	case scheduler.EventTrigger:
-		if controlled, ok := e.synth.(controlledSynth); ok {
-			controlled.ClearVoiceControls(voice)
+		shard, local, _ := e.address(voice)
+		if shard.controlled != nil {
+			shard.controlled.ClearVoiceControls(local)
 			delete(e.controls.voiceValue, voice)
 		}
 		// Sointu's tracker note convention is one octave above MIDI (its 81
 		// is concert A4). Keep the public API in MIDI and translate here.
-		e.synth.Trigger(voice, ev.Note+12)
+		shard.synth.Trigger(local, ev.Note+12)
 		e.owners[voice] = ev.HandleID
 	case scheduler.EventRelease:
 		if e.owners[voice] == ev.HandleID {
@@ -237,10 +249,20 @@ func (e *Engine) apply(ev scheduler.Event, at clock.FrameIndex) {
 	e.recordEvent(ev, at, voice, ev.Kind.String())
 }
 
+// addressesVoice reports whether the event targets one logical voice, given
+// by its instrument and voice offset.
+func addressesVoice(ev scheduler.Event) bool {
+	return ev.Kind == scheduler.EventTrigger || ev.Kind == scheduler.EventRelease || ((ev.Kind == scheduler.EventSetControl || ev.Kind == scheduler.EventStartAutomation) && ev.HandleID != 0)
+}
+
 func (e *Engine) recordEvent(ev scheduler.Event, at clock.FrameIndex, voice int, kind string) {
 	e.traceMu.Lock()
 	if len(e.trace) < cap(e.trace) {
-		e.trace = append(e.trace, scheduler.TraceEvent{ID: ev.ID, Kind: kind, Instrument: string(ev.Instrument), Voice: voice, Note: ev.Note, Parameter: ev.Parameter, Value: ev.Value, Generation: ev.Generation, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)})
+		entry := scheduler.TraceEvent{ID: ev.ID, Kind: kind, Instrument: string(ev.Instrument), Voice: voice, Note: ev.Note, Parameter: ev.Parameter, Value: ev.Value, Generation: ev.Generation, ScheduledFrame: uint64(ev.Frame), AppliedFrame: uint64(at)}
+		if len(e.shards) > 1 && addressesVoice(ev) && voice >= 0 && voice < len(e.voiceMap) {
+			entry.Shard, entry.LocalVoice = &e.voiceMap[voice].Shard, &e.voiceMap[voice].Local
+		}
+		e.trace = append(e.trace, entry)
 	} else {
 		e.dropped.Add(1)
 	}

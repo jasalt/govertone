@@ -71,6 +71,10 @@ type TraceEvent struct {
 	Generation     uint64  `json:"generation,omitempty"`
 	ScheduledFrame uint64  `json:"scheduled_frame"`
 	AppliedFrame   uint64  `json:"applied_frame"`
+	// Shard and LocalVoice locate Voice in a multi-VM patch. They are
+	// omitted when the patch runs in one VM, where Voice is the VM voice.
+	Shard      *int `json:"shard,omitempty"`
+	LocalVoice *int `json:"local_voice,omitempty"`
 }
 
 type Trace struct {
