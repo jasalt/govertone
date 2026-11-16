@@ -17,6 +17,7 @@ func (r *Runtime) installMIDIBindings() error {
 		"midi-bind!": r.midiBindFn, "midi-cc-bind!": r.midiCCBindFn, "midi-pitch-bind!": r.midiPitchBindFn,
 		"midi-unbind!": r.midiUnbindFn, "midi-bindings": r.midiBindingsFn,
 		"midi-replay!": r.midiReplayFn, "midi-stats": r.midiStatsFn,
+		"midi-devices": r.midiDevicesFn, "midi-connect!": r.midiConnectFn, "midi-disconnect!": r.midiDisconnectFn,
 	}
 	for name, function := range bindings {
 		native, err := vm.NativeFnType.Wrap(function)

@@ -4,6 +4,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/example/letgo-sointu/internal/app"
 	"github.com/example/letgo-sointu/internal/midi"
@@ -297,5 +298,117 @@ func TestMIDIBindingSurvivesSynthRedefinitionWithoutTarget(t *testing.T) {
 	last := a.Lisp.MIDITrace()
 	if e := last[len(last)-1]; e.Action != "binding-target-missing" || !strings.Contains(e.Detail, "cutoff") {
 		t.Fatalf("trace %+v", e)
+	}
+}
+
+// Live input: a virtual device's events are timestamped, converted to frames
+// and applied; unplugging it releases its notes and deactivates its bindings.
+func TestLiveMIDIInputConvertsTimestampsAndHandlesUnplug(t *testing.T) {
+	a := newMIDIApp(t)
+	backend := midi.NewVirtualBackend()
+	backend.AddPort("20:0", "USB Keys")
+	a.Lisp.SetMIDIBackend(backend)
+	if v, err := a.Lisp.Eval(`(map :name (midi-devices))`); err != nil || v.String() != `("USB Keys")` {
+		t.Fatalf("devices %v %v", v, err)
+	}
+	evalAll(t, a, `(midi-bind! {:device "USB Keys"} :lead)`)
+	if _, err := a.Lisp.Eval(`(midi-connect! "nothing")`); err == nil || !strings.Contains(err.Error(), "midi-device-not-found") {
+		t.Fatalf("unknown device: %v", err)
+	}
+	beforeConnect := time.Now()
+	evalAll(t, a, `(midi-connect! "keys" {:latency 0})`)
+	if _, err := a.Lisp.Eval(`(midi-connect! "keys")`); err == nil || !strings.Contains(err.Error(), "midi-device-busy") {
+		t.Fatalf("second connect: %v", err)
+	}
+	render(t, a, 4096) // the engine is at frame 4096
+	port := backend.Port("20:0")
+	// Stamped before the clock anchor: its frame is in the past, so it is
+	// applied at the engine's current frame and reported late.
+	port.Send(beforeConnect, midi.Message{Kind: midi.NoteOn, Channel: 1, Data1: 60, Data2: 100})
+	// Stamped 10 s after the connect-time anchor (engine frame 0, and the
+	// offline engine does not follow the wall clock): frame 441000 plus the
+	// wall time that has passed since connecting.
+	port.Send(time.Now().Add(10*time.Second), midi.Message{Kind: midi.NoteOn, Channel: 1, Data1: 64, Data2: 100})
+	waitFor(t, func() bool { return a.Lisp.MIDIStats().Received == 2 })
+	plays := map[string]midiPlay{}
+	for _, e := range a.Lisp.MIDITrace() {
+		if e.Action == "play" {
+			plays[e.Message] = midiPlay{e.Frame, e.Late}
+		}
+	}
+	if p := plays["note-on ch1 note 60 velocity 100"]; p.frame != 4096 || !p.late {
+		t.Fatalf("past event: %+v", p)
+	}
+	if p := plays["note-on ch1 note 64 velocity 100"]; p.late || p.frame < 441000 || p.frame > 441000+22050 {
+		t.Fatalf("future event: %+v", p)
+	}
+	render(t, a, 512) // the late note triggers at frame 4096 and is sounding
+	if n := len(traceOf(a, "trigger")); n != 1 {
+		t.Fatalf("triggers before unplug: %d", n)
+	}
+	backend.RemovePort("20:0")
+	waitFor(t, func() bool {
+		v, _ := a.Lisp.Eval(`(map :active (midi-bindings))`)
+		return v != nil && v.String() == "(false)"
+	})
+	render(t, a, 1024)
+	// The sounding note is released. The note scheduled for the future is
+	// cancelled before it can trigger.
+	if n := len(traceOf(a, "release")); n != 1 {
+		t.Fatalf("unplug: %d releases, want the one sounding note", n)
+	}
+	render(t, a, 450000)
+	if n := len(traceOf(a, "trigger")); n != 1 {
+		t.Fatalf("a cancelled future note triggered after unplug: %d triggers", n)
+	}
+	if v, _ := a.Lisp.Eval(`(midi-disconnect! "USB Keys")`); v.String() != "false" {
+		t.Fatalf("disconnect after unplug %v", v)
+	}
+}
+
+type midiPlay struct {
+	frame uint64
+	late  bool
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(2 * time.Millisecond) {
+		if condition() {
+			return
+		}
+	}
+	t.Fatal("condition not reached in 5 s")
+}
+
+func TestLiveMIDIWithoutBackendFailsStructurally(t *testing.T) {
+	a := newMIDIApp(t)
+	for _, form := range []string{`(midi-devices)`, `(midi-connect! "x")`} {
+		if _, err := a.Lisp.Eval(form); err == nil || !strings.Contains(err.Error(), "midi-backend-unavailable") {
+			t.Errorf("%s: %v", form, err)
+		}
+	}
+}
+
+// A device that floods faster than the dispatcher drains must lose events
+// only through the counted drop path.
+func TestVirtualInputCountsDroppedEvents(t *testing.T) {
+	backend := midi.NewVirtualBackend()
+	backend.AddPort("1:0", "Flood")
+	in, err := backend.OpenInput(nil, "1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := backend.Port("1:0")
+	for i := 0; i < 100; i++ {
+		port.Send(time.Now(), midi.Message{Kind: midi.NoteOn, Channel: 1, Data1: 60, Data2: 1})
+	}
+	received := 0
+	for len(in.Events()) > 0 {
+		<-in.Events()
+		received++
+	}
+	if dropped := in.(midi.Dropper).Dropped(); received+int(dropped) != 100 || dropped == 0 {
+		t.Fatalf("received %d dropped %d", received, dropped)
 	}
 }

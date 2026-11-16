@@ -25,6 +25,11 @@ type Input interface {
 	Close() error
 }
 
+// Dropper is implemented by inputs that can lose events when their consumer
+// is too slow. Dropped counts events discarded because a bounded buffer was
+// full; it only ever grows.
+type Dropper interface{ Dropped() uint64 }
+
 // Backend is the isolated hardware seam (phase-3.md §20.2). Tests use fakes,
 // CI uses replay logs, and Linux uses the ALSA sequencer backend.
 type Backend interface {

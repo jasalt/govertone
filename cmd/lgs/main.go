@@ -463,6 +463,11 @@ func doctorMIDI() {
 	} else {
 		fmt.Println("midi replay: ok")
 	}
+	virtual := midi.NewVirtualBackend()
+	virtual.AddPort("doctor:0", "doctor virtual port")
+	if devices, err := virtual.Devices(context.Background()); err == nil && len(devices) == 1 {
+		fmt.Println("midi virtual test port: available")
+	}
 	backend, err := midiBackend()
 	if err != nil {
 		fmt.Println("midi backend: unavailable (optional):", err)

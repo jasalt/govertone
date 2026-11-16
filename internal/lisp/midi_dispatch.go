@@ -97,10 +97,21 @@ type midiState struct {
 	lost   map[string]bool
 	stats  MIDIStats
 	trace  []MIDITraceEntry
+
+	backend midi.Backend
+	inputs  map[string]*midiInput // open devices by name
+}
+
+// midiInput is one open device and the goroutine feeding the dispatcher.
+type midiInput struct {
+	device midi.Device
+	input  midi.Input
+	conv   *midi.Converter
+	done   chan struct{}
 }
 
 func newMIDIState() *midiState {
-	return &midiState{owners: map[ownerKey][]uint64{}, lost: map[string]bool{}}
+	return &midiState{owners: map[ownerKey][]uint64{}, lost: map[string]bool{}, inputs: map[string]*midiInput{}}
 }
 
 func (s *midiState) record(e MIDITraceEntry) {
@@ -126,7 +137,13 @@ func (r *Runtime) MIDITrace() []MIDITraceEntry {
 func (r *Runtime) MIDIStats() MIDIStats {
 	r.midi.mu.Lock()
 	defer r.midi.mu.Unlock()
-	return r.midi.stats
+	stats := r.midi.stats
+	for _, in := range r.midi.inputs {
+		if d, ok := in.input.(midi.Dropper); ok {
+			stats.QueueOverflows += d.Dropped()
+		}
+	}
+	return stats
 }
 
 // DispatchMIDI converts an event to a scheduler frame and applies every

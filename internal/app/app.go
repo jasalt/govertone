@@ -51,6 +51,7 @@ func New(out, errOut io.Writer) (*App, error) {
 func (a *App) Close() {
 	a.closeOnce.Do(func() {
 		a.Transport.Stop()
+		a.Lisp.CloseMIDI()
 		a.Engine.Close()
 	})
 }
